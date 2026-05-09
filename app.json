@@ -37,6 +37,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8e2b9803-fb80-4c79-bf53-99640ce5834c"
+      }
+    },
+    "owner": "dipantan"
   }
 }
