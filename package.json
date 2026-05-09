@@ -1,4 +1,5 @@
 {
+  "license": "GPL-3.0-only",
   "name": "saddhamma",
   "main": "expo-router/entry",
   "version": "1.0.0",
