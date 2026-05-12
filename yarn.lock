@@ -3405,6 +3405,11 @@ react-native-screens@4.25.0-beta.3:
     react-freeze "^1.0.0"
     warn-once "^0.1.0"
 
+react-native-snackbar@^3.0.1:
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/react-native-snackbar/-/react-native-snackbar-3.0.1.tgz#ac82ea71235bbde126ca8a7d87e669e650f2bcf4"
+  integrity sha512-ZQs0C7K5fkBW/exhlhBQe59a3YmLZdLnnGsYrCaKh2DqiEo47stcPF+a9yke+SKshTnXomXgBgnQNN/y28kaoA==
+
 react-native-web@~0.21.0:
   version "0.21.2"
   resolved "https://registry.yarnpkg.com/react-native-web/-/react-native-web-0.21.2.tgz#0f6983dfea600d9cc1c66fda87ff9ca585eaa647"

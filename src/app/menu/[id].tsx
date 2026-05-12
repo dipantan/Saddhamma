@@ -1,20 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
-import { Host, Text, Column } from '@expo/ui';
-import { getMenu } from '@/services/DataService';
-
-interface MenuItem {
-  uid: string;
-  name: string;
-  has_children: boolean;
-  type: 'menu' | 'sutta';
-}
+import React, { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { 
+  Host, 
+  Column, 
+  Text, 
+  ListItem, 
+  LazyColumn,
+  OutlinedCard,
+  Box
+} from "@expo/ui/jetpack-compose";
+import { 
+  fillMaxWidth, 
+  paddingAll, 
+  fillMaxHeight,
+  clickable,
+  height
+} from "@expo/ui/jetpack-compose/modifiers";
+import { getMenu } from "@/services/DataService";
 
 export default function MenuScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const [items, setItems] = useState<MenuItem[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,85 +30,108 @@ export default function MenuScreen() {
 
   const loadMenu = async () => {
     setLoading(true);
-    const data = await getMenu(id);
-    if (data) {
-      setItems(data);
-    }
-    setLoading(false);
-  };
-
-  const handlePress = (item: MenuItem) => {
-    if (item.type === 'menu') {
-      router.push(`/menu/${item.uid}`);
-    } else {
-      router.push(`/reader/${item.uid}`);
+    try {
+      const data = await getMenu(id);
+      if (data) {
+        setItems(data);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <Host>
+    <Host style={{ flex: 1 }}>
       <Stack.Screen options={{ title: id.toUpperCase() }} />
-      <Column flex={1} style={styles.container}>
-        {loading ? (
-          <ActivityIndicator size="large" color="#6200ee" style={{ marginTop: 50 }} />
-        ) : (
-          <FlatList
-            data={items}
-            keyExtractor={(item) => item.uid}
-            contentContainerStyle={styles.list}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={styles.item} 
-                onPress={() => handlePress(item)}
+      
+      <LazyColumn modifiers={[fillMaxWidth(), fillMaxHeight()]}>
+        {items.map((item, index) => {
+          const isLeaf = item.type === 'sutta' || (item.uid && !item.has_children);
+          
+          if (!isLeaf) {
+            // Collection Node: Standard Navigation Item
+            return (
+              <ListItem
+                key={item.uid || index}
+                modifiers={[
+                  fillMaxWidth(), 
+                  clickable(() => router.push(`/menu/${item.uid}`))
+                ]}
               >
-                <View style={styles.itemTextContent}>
-                  <Text variant="bodyLarge">{item.name}</Text>
-                  <Text variant="bodySmall" style={styles.uid}>{item.uid}</Text>
-                </View>
-                {item.type === 'menu' && (
-                  <Text style={styles.chevron}>›</Text>
-                )}
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={
-              <Text style={styles.empty}>No content found in this section.</Text>
-            }
-          />
-        )}
-      </Column>
+                <ListItem.LeadingContent>
+                  <Text style={{ fontSize: 20 }}>📁</Text>
+                </ListItem.LeadingContent>
+                <ListItem.HeadlineContent>
+                  <Text>{item.title || item.uid}</Text>
+                </ListItem.HeadlineContent>
+                <ListItem.SupportingContent>
+                  <Text>{item.subtitle || "Collection"}</Text>
+                </ListItem.SupportingContent>
+                <ListItem.TrailingContent>
+                  <Text style={{ fontSize: 16 }}>›</Text>
+                </ListItem.TrailingContent>
+              </ListItem>
+            );
+          }
+
+          // Leaf Node: Detailed Suttaplex-style Card
+          return (
+            <Column key={item.uid || index} modifiers={[fillMaxWidth(), paddingAll(8)]}>
+              <OutlinedCard
+                modifiers={[
+                  fillMaxWidth(),
+                  clickable(() => router.push(`/reader/${item.uid}`))
+                ]}
+              >
+                <Column modifiers={[fillMaxWidth(), paddingAll(16)]}>
+                  <Text style={{ typography: "titleMedium" }}>
+                    {item.title || item.uid}
+                  </Text>
+                  
+                  <Box modifiers={[fillMaxWidth(), height(4)]} />
+                  
+                  <Text style={{ typography: "bodySmall" }} color="#666">
+                    {item.uid.toUpperCase()}
+                  </Text>
+
+                  <Box modifiers={[fillMaxWidth(), height(12)]} />
+                  
+                  <Column modifiers={[fillMaxWidth()]}>
+                    <Text style={{ typography: "labelLarge" }}>
+                      Author: {item.author || "Bhikkhu Sujato"}
+                    </Text>
+                    <Text style={{ typography: "labelMedium" }} color="#888">
+                      Translation: {item.translation || "The Collected Discourses"}
+                    </Text>
+                    <Text style={{ typography: "labelSmall" }} color="#AAA">
+                      Language: {item.language || "English"}
+                    </Text>
+                  </Column>
+
+                  {item.description && (
+                    <>
+                      <Box modifiers={[fillMaxWidth(), height(8)]} />
+                      <Text style={{ typography: "bodyMedium" }}>
+                        {item.description}
+                      </Text>
+                    </>
+                  )}
+                </Column>
+              </OutlinedCard>
+            </Column>
+          );
+        })}
+      </LazyColumn>
+
+      {items.length === 0 && !loading && (
+        <Column modifiers={[fillMaxWidth(), paddingAll(32)]}>
+          <Text style={{ textAlign: "center" }}>
+            No items found in this section.
+          </Text>
+        </Column>
+      )}
     </Host>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#fff',
-  },
-  list: {
-    padding: 10,
-  },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  itemTextContent: {
-    flex: 1,
-  },
-  uid: {
-    color: '#999',
-    marginTop: 2,
-  },
-  chevron: {
-    fontSize: 24,
-    color: '#ccc',
-    marginLeft: 10,
-  },
-  empty: {
-    textAlign: 'center',
-    marginTop: 100,
-    color: '#999',
-  }
-});

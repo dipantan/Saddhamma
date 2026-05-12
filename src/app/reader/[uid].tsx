@@ -1,65 +1,92 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
-import { Host, Text, Column } from '@expo/ui';
-import { getSuttaContent } from '@/services/DataService';
+import { 
+  Host, 
+  Column, 
+  Text, 
+  ModalBottomSheet,
+  Button,
+  LazyColumn,
+  ListItem
+} from "@expo/ui/jetpack-compose";
+import { 
+  fillMaxWidth, 
+  paddingAll, 
+  fillMaxHeight,
+  clickable
+} from "@expo/ui/jetpack-compose/modifiers";
+import { getSuttaContent } from "@/services/DataService";
 
 export default function ReaderScreen() {
   const { uid } = useLocalSearchParams<{ uid: string }>();
-  const [content, setContent] = useState<Record<string, string> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [content, setContent] = useState<any>(null);
+  const [showComments, setShowComments] = useState(false);
+  const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadContent() {
-      if (uid) {
-        const data = await getSuttaContent(uid);
-        setContent(data);
-      }
-      setLoading(false);
-    }
-    loadContent();
+    loadSutta();
   }, [uid]);
 
-  if (loading) {
-    return (
-      <Column flex={1} justifyContent="center" alignItems="center">
-        <ActivityIndicator size="large" />
-      </Column>
-    );
-  }
-
-  if (!content) {
-    return (
-      <Column flex={1} justifyContent="center" alignItems="center">
-        <Text>Sutta not found or not synced yet.</Text>
-      </Column>
-    );
-  }
+  const loadSutta = async () => {
+    const data = await getSuttaContent(uid);
+    setContent(data);
+  };
 
   return (
-    <Host>
-      <Stack.Screen options={{ title: uid }} />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Column gap={16}>
-          {Object.entries(content).map(([key, text]) => (
-            <Column key={key} gap={4}>
-              <Text variant="bodySmall" style={styles.segmentId}>{key}</Text>
-              <Text variant="bodyLarge">{text}</Text>
-            </Column>
-          ))}
+    <Host style={{ flex: 1 }}>
+      <Stack.Screen options={{ title: uid.toUpperCase() }} />
+      
+      <LazyColumn modifiers={[fillMaxWidth(), fillMaxHeight()]}>
+        {/* Header Section */}
+        <Column modifiers={[fillMaxWidth(), paddingAll(16)]}>
+          <Text style={{ typography: "headlineMedium" }}>
+            {uid.toUpperCase()}
+          </Text>
         </Column>
-      </ScrollView>
+
+        {/* Text Segments */}
+        {content && Object.entries(content).map(([key, text]: [string, any]) => (
+          <ListItem
+            key={key}
+            modifiers={[
+              fillMaxWidth(),
+              clickable(() => {
+                setSelectedSegment(key);
+                setShowComments(true);
+              })
+            ]}
+          >
+            <ListItem.HeadlineContent>
+              <Text>{text as string}</Text>
+            </ListItem.HeadlineContent>
+            <ListItem.SupportingContent>
+              <Text>{key}</Text>
+            </ListItem.SupportingContent>
+          </ListItem>
+        ))}
+      </LazyColumn>
+
+      {showComments && (
+        <ModalBottomSheet
+          onDismissRequest={() => setShowComments(false)}
+        >
+          <Column modifiers={[fillMaxWidth(), paddingAll(24)]}>
+            <Text style={{ typography: "titleLarge" }}>Segment Info</Text>
+            <Text color="#666" modifiers={[paddingAll(8)]}>
+              ID: {selectedSegment}
+            </Text>
+            <Text>
+              Notes and references for this segment would appear here.
+            </Text>
+            <Button 
+              onClick={() => setShowComments(false)}
+              modifiers={[fillMaxWidth(), paddingAll(16)]}
+            >
+              <Text>Close</Text>
+            </Button>
+          </Column>
+        </ModalBottomSheet>
+      )}
     </Host>
   );
 }
-
-const styles = StyleSheet.create({
-  scrollContent: {
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  segmentId: {
-    color: '#999',
-    fontSize: 10,
-  }
-});
