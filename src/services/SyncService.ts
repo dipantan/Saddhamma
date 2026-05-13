@@ -2,7 +2,7 @@ import { Paths, File as ExpoFile, Directory } from 'expo-file-system';
 import { unzip } from 'react-native-zip-archive';
 import { Snackbar } from 'react-native-snackbar';
 // Use absolute path alias to resolve module discovery issues
-import { populateIndex } from '@/services/DataService';
+import { populateIndex, isDataReady } from '@/services/DataService';
 
 const RELEASE_BASE = "https://github.com/dipantan/suttacentral-api-server/releases/latest/download";
 const DATA_URL = `${RELEASE_BASE}/data.zip`;
@@ -61,10 +61,32 @@ export async function checkForUpdates(): Promise<VersionInfo | false> {
   }
 }
 
-export async function syncData(onProgress: (percent: number | null) => void): Promise<boolean> {
+export async function syncData(
+  onProgress: (percent: number | null) => void,
+): Promise<boolean> {
   try {
+    const ready = await isDataReady();
     const updateInfo = await checkForUpdates();
-    if (!updateInfo) return true;
+
+    // If data is ready and no updates are available, skip.
+    // If data is NOT ready, we MUST proceed even if updateInfo is false (version match).
+    if (ready && !updateInfo) {
+      console.log("Data is ready and no updates found. Skipping sync.");
+      return true;
+    }
+
+    // If updateInfo is false but we are not ready, we need to get the latest version info anyway
+    let finalUpdateInfo = updateInfo;
+    if (!finalUpdateInfo) {
+      const response = await fetch(VERSION_URL);
+      if (response.ok) {
+        finalUpdateInfo = await response.json();
+      }
+    }
+
+    if (!finalUpdateInfo) {
+      throw new Error("Could not retrieve version information for sync.");
+    }
 
     console.log("Starting data sync...");
     Snackbar.show({
@@ -123,7 +145,7 @@ export async function syncData(onProgress: (percent: number | null) => void): Pr
     }
 
     const versionFile = new ExpoFile(VERSION_PATH);
-    await versionFile.write(JSON.stringify(updateInfo));
+    await versionFile.write(JSON.stringify(finalUpdateInfo));
 
     console.log("Populating index...");
     Snackbar.show({

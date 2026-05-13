@@ -1,36 +1,35 @@
-import { isDataReady } from "@/services/DataService";
-import { checkForUpdates, syncData } from "@/services/SyncService";
+import React, { useEffect, useState } from "react";
 import {
-  AlertDialog,
-  Button,
-  Column,
-  Host,
-  LazyColumn,
-  LinearProgressIndicator,
-  CircularProgressIndicator,
-  ListItem,
-  SearchBar,
+  View,
   Text,
-  Box
-} from "@expo/ui/jetpack-compose";
-import {
-  fillMaxHeight,
-  fillMaxWidth,
-  paddingAll,
-  height,
-  clickable
-} from "@expo/ui/jetpack-compose/modifiers";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+  FlatList,
+  StyleSheet,
+  Pressable,
+  Modal,
+  ActivityIndicator,
+} from "react-native";
+import { useRouter, Stack } from "expo-router";
+import { isDataReady, getRootCategories } from "@/services/DataService";
+import { checkForUpdates, syncData } from "@/services/SyncService";
+import { useTheme } from "@/theme/ThemeContext";
+import { spacing, radius } from "@/theme/tokens";
+const CATEGORY_EMOJIS: Record<string, string> = {
+  sutta: "☸️",
+  vinaya: "📜",
+  abhidhamma: "💎",
+};
+
+const DEFAULT_EMOJI = "📖";
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<number | null>(0);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [categories, setCategories] = useState<any[]>([]);
 
   useEffect(() => {
     checkInitialState();
@@ -39,15 +38,17 @@ export default function HomeScreen() {
   const checkInitialState = async () => {
     const ready = await isDataReady();
     setDataLoaded(ready);
-
     if (!ready) {
       setShowSyncDialog(true);
     } else {
-      const updateAvailable = await checkForUpdates();
-      if (updateAvailable) {
-        // Handle background update
-      }
+      loadCategories();
+      await checkForUpdates();
     }
+  };
+
+  const loadCategories = async () => {
+    const rootCats = await getRootCategories();
+    setCategories(rootCats);
   };
 
   const handleSync = async () => {
@@ -58,6 +59,7 @@ export default function HomeScreen() {
       if (success) {
         setDataLoaded(true);
         setShowSyncDialog(false);
+        loadCategories();
       } else {
         setSyncError("Sync failed. Please check your connection.");
       }
@@ -69,133 +71,240 @@ export default function HomeScreen() {
     }
   };
 
+  const renderCategory = ({ item }: { item: any }) => (
+    <Pressable
+      style={({ pressed }) => [
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.cardBorder,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+      onPress={() => router.push(`/menu/${item.uid}`)}
+    >
+      <Text style={styles.emoji}>{CATEGORY_EMOJIS[item.uid] || DEFAULT_EMOJI}</Text>
+      <View style={styles.cardContent}>
+        <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+          {item.root_name}
+        </Text>
+        <Text
+          style={[styles.cardTranslated, { color: colors.textSecondary }]}
+        >
+          {item.translated_name}
+        </Text>
+        <Text
+          style={[styles.cardSubtitle, { color: colors.textTertiary }]}
+        >
+          {item.blurb}
+        </Text>
+      </View>
+    </Pressable>
+  );
+
   return (
-    <Host style={{ flex: 1 }}>
-      <Column modifiers={[fillMaxWidth(), fillMaxHeight()]}>
-        <Box modifiers={[fillMaxWidth(), height(48)]} />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Stack.Screen
+        options={{
+          title: "Saddhamma",
+          headerSearchBarOptions: {
+            placeholder: "Search Suttas…",
+            onSearchButtonPress: (e) =>
+              router.push(`/search?q=${e.nativeEvent.text}`),
+          },
+        }}
+      />
 
-        <SearchBar
-          onSearch={(q) => router.push(`/search?q=${q}`)}
-          modifiers={[fillMaxWidth(), paddingAll(8)]}
-        >
-          <SearchBar.Placeholder>
-            <Text>Search Suttas...</Text>
-          </SearchBar.Placeholder>
-        </SearchBar>
+      <FlatList
+        data={categories}
+        renderItem={renderCategory}
+        keyExtractor={(item) => item.uid}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>
+              The Piṭakas
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+              Explore the Pāli Canon
+            </Text>
+          </View>
+        }
+        contentContainerStyle={styles.listContent}
+      />
 
-        <LazyColumn modifiers={[fillMaxWidth()]}>
-          <Column modifiers={[fillMaxWidth(), paddingAll(16)]}>
-            <Text style={{ typography: "titleLarge" }}>The Three Pillars</Text>
-          </Column>
-
-          <ListItem
-            modifiers={[fillMaxWidth(), clickable(() => router.push("/menu/sutta"))]}
-          >
-            <ListItem.LeadingContent>
-              <Text style={{ fontSize: 24 }}>☸️</Text>
-            </ListItem.LeadingContent>
-            <ListItem.HeadlineContent>
-              <Text>Sutta</Text>
-            </ListItem.HeadlineContent>
-            <ListItem.SupportingContent>
-              <Text>The Discourses of the Buddha</Text>
-            </ListItem.SupportingContent>
-          </ListItem>
-
-          <ListItem
-            modifiers={[fillMaxWidth(), clickable(() => router.push("/menu/vinaya"))]}
-          >
-            <ListItem.LeadingContent>
-              <Text style={{ fontSize: 24 }}>📜</Text>
-            </ListItem.LeadingContent>
-            <ListItem.HeadlineContent>
-              <Text>Vinaya</Text>
-            </ListItem.HeadlineContent>
-            <ListItem.SupportingContent>
-              <Text>The Monastic Rules & Code</Text>
-            </ListItem.SupportingContent>
-          </ListItem>
-
-          <ListItem
-            modifiers={[fillMaxWidth(), clickable(() => router.push("/menu/abhidhamma"))]}
-          >
-            <ListItem.LeadingContent>
-              <Text style={{ fontSize: 24 }}>💎</Text>
-            </ListItem.LeadingContent>
-            <ListItem.HeadlineContent>
-              <Text>Abhidhamma</Text>
-            </ListItem.HeadlineContent>
-            <ListItem.SupportingContent>
-              <Text>The Higher Philosophy</Text>
-            </ListItem.SupportingContent>
-          </ListItem>
-        </LazyColumn>
-      </Column>
-
-      {showSyncDialog && (
-        <AlertDialog
-          onDismissRequest={() => dataLoaded && !isSyncing && setShowSyncDialog(false)}
-          properties={{
-            dismissOnBackPress: !!(dataLoaded && !isSyncing),
-            dismissOnClickOutside: !!(dataLoaded && !isSyncing)
-          }}
-        >
-          <AlertDialog.Title>
-            <Text>Sutta Library Sync</Text>
-          </AlertDialog.Title>
-          
-          <AlertDialog.Text>
-            <Column modifiers={[fillMaxWidth()]}>
-              <Text color={syncError ? "#D32F2F" : undefined}>
-                {syncError || (isSyncing
-                  ? syncProgress === null 
-                    ? "Extracting Sutta data..." 
-                    : "Downloading Sutta data..."
+      {/* Sync Dialog */}
+      <Modal
+        visible={showSyncDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => dataLoaded && !isSyncing && setShowSyncDialog(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Sutta Library Sync
+            </Text>
+            
+            <Text style={[styles.modalText, { color: syncError ? colors.error : colors.textSecondary }]}>
+              {syncError ||
+                (isSyncing
+                  ? syncProgress === null
+                    ? "Extracting Sutta data…"
+                    : "Downloading Sutta data…"
                   : "The library needs to be downloaded for offline use.")}
-              </Text>
-              
-              {isSyncing && (
-                <Column modifiers={[fillMaxWidth(), paddingAll(16)]}>
-                  {syncProgress === null ? (
-                    <CircularProgressIndicator modifiers={[fillMaxWidth()]} />
-                  ) : (
-                    <LinearProgressIndicator
-                      progress={syncProgress}
-                      modifiers={[fillMaxWidth()]}
-                    />
-                  )}
-                  <Text
-                    style={{ typography: "bodySmall" }}
-                    modifiers={[paddingAll(8)]}
-                  >
-                    {syncProgress !== null 
-                      ? `${Math.round(syncProgress * 100)}% Complete` 
-                      : "Processing..."}
-                  </Text>
-                </Column>
-              )}
-            </Column>
-          </AlertDialog.Text>
-          
-          <AlertDialog.ConfirmButton>
-            {!isSyncing ? (
-              <Button onClick={handleSync}>
-                <Text>{syncError ? "Try Again" : "Download Now"}</Text>
-              </Button>
-            ) : (
-              <Box /> // Invisible placeholder to maintain slot presence
-            )}
-          </AlertDialog.ConfirmButton>
+            </Text>
 
-          {dataLoaded && !isSyncing && (
-            <AlertDialog.DismissButton>
-              <Button onClick={() => setShowSyncDialog(false)}>
-                <Text>Cancel</Text>
-              </Button>
-            </AlertDialog.DismissButton>
-          )}
-        </AlertDialog>
-      )}
-    </Host>
+            {isSyncing && (
+              <View style={styles.progressContainer}>
+                {syncProgress === null ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <View style={[styles.progressBarBase, { backgroundColor: colors.divider }]}>
+                    <View 
+                      style={[
+                        styles.progressBarFill, 
+                        { backgroundColor: colors.primary, width: `${syncProgress * 100}%` }
+                      ]} 
+                    />
+                  </View>
+                )}
+                <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+                  {syncProgress !== null
+                    ? `${Math.round(syncProgress * 100)}% Complete`
+                    : "Processing…"}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.modalButtons}>
+              {!isSyncing && (
+                <Pressable
+                  style={[styles.button, { backgroundColor: colors.primary }]}
+                  onPress={handleSync}
+                >
+                  <Text style={[styles.buttonText, { color: colors.textInverse }]}>
+                    {syncError ? "Try Again" : "Download Now"}
+                  </Text>
+                </Pressable>
+              )}
+              
+              {dataLoaded && !isSyncing && (
+                <Pressable
+                  style={[styles.button, { marginTop: spacing.sm }]}
+                  onPress={() => setShowSyncDialog(false)}
+                >
+                  <Text style={[styles.buttonText, { color: colors.primary }]}>
+                    Cancel
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: spacing.huge,
+  },
+  header: {
+    padding: spacing.lg,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  subtitle: {
+    fontSize: 13,
+    marginTop: spacing.xs,
+  },
+  card: {
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  emoji: {
+    fontSize: 32,
+    marginRight: spacing.lg,
+  },
+  cardContent: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  cardTranslated: {
+    fontSize: 13,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  modalContent: {
+    width: "100%",
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: spacing.md,
+  },
+  modalText: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: spacing.xl,
+  },
+  progressContainer: {
+    marginBottom: spacing.xl,
+    alignItems: "center",
+  },
+  progressBarBase: {
+    width: "100%",
+    height: 6,
+    borderRadius: 3,
+    overflow: "hidden",
+    marginBottom: spacing.sm,
+  },
+  progressBarFill: {
+    height: "100%",
+  },
+  progressText: {
+    fontSize: 12,
+  },
+  modalButtons: {
+    width: "100%",
+  },
+  button: {
+    width: "100%",
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: "center",
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});
+
