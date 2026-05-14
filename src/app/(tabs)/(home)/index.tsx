@@ -30,6 +30,7 @@ export default function HomeScreen() {
   const [showSyncDialog, setShowSyncDialog] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   useEffect(() => {
     checkInitialState();
@@ -54,6 +55,12 @@ export default function HomeScreen() {
   const handleSync = async () => {
     setIsSyncing(true);
     setSyncError(null);
+    setElapsedTime(0);
+    const startTime = Date.now();
+    const timer = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
     try {
       const success = await syncData((p) => setSyncProgress(p));
       if (success) {
@@ -67,6 +74,7 @@ export default function HomeScreen() {
       console.error(error);
       setSyncError("An unexpected error occurred during sync.");
     } finally {
+      clearInterval(timer);
       setIsSyncing(false);
     }
   };
@@ -170,8 +178,8 @@ export default function HomeScreen() {
                 )}
                 <Text style={[styles.progressText, { color: colors.textSecondary }]}>
                   {syncProgress !== null
-                    ? `${Math.round(syncProgress * 100)}% Complete`
-                    : "Processing…"}
+                    ? `${Math.round(syncProgress * 100)}% Complete (${elapsedTime}s)`
+                    : `Processing… (${elapsedTime}s)`}
                 </Text>
               </View>
             )}

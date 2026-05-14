@@ -111,13 +111,14 @@ export async function syncData(
     }
 
     console.log("Extracting data...");
+    const unzipStartTime = Date.now();
     onProgress(null); // Switch to indeterminate
     Snackbar.show({
       text: 'Extracting files...',
       duration: Snackbar.LENGTH_SHORT,
     });
     await unzip(result.uri, dataDir.uri);
-
+    
     // DEBUG: Log contents to see what actually got extracted
     try {
       const actualContents = await dataDir.list();
@@ -143,6 +144,13 @@ export async function syncData(
       }
       await nestedData.delete();
     }
+
+    const unzipDuration = ((Date.now() - unzipStartTime) / 1000).toFixed(2);
+    console.log(`Extraction process (including normalization) completed in ${unzipDuration}s`);
+    Snackbar.show({
+      text: `Extraction complete (${unzipDuration}s)`,
+      duration: Snackbar.LENGTH_SHORT,
+    });
 
     const versionFile = new ExpoFile(VERSION_PATH);
     await versionFile.write(JSON.stringify(finalUpdateInfo));

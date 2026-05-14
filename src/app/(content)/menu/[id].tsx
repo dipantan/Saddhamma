@@ -1,16 +1,15 @@
-import React, { useEffect, useState } from "react";
+import { getMenu, stripHtml } from "@/services/DataService";
+import { radius, spacing, useTheme } from "@/theme";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  Pressable,
   ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { getMenu } from "@/services/DataService";
-import { useTheme, spacing, radius } from "@/theme";
-import { Ionicons } from "@expo/vector-icons";
 
 export default function MenuScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,7 +17,11 @@ export default function MenuScreen() {
   const { colors } = useTheme();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [headerInfo, setHeaderInfo] = useState({ title: "", blurb: "" });
+  const [headerInfo, setHeaderInfo] = useState({
+    appBarTitle: "",
+    displayTitle: "",
+    blurb: "",
+  });
 
   useEffect(() => {
     loadMenu();
@@ -30,30 +33,40 @@ export default function MenuScreen() {
       const data = await getMenu(id);
       if (data) {
         let menuItems: any[] = [];
-        let title = id.toUpperCase();
+        let appBarTitle = id.toUpperCase();
+        let displayTitle = id.toUpperCase();
         let blurb = "";
 
         if (Array.isArray(data)) {
           if (data.length === 1 && data[0].children) {
             const parent = data[0];
             menuItems = parent.children;
-            title = parent.translated_name || parent.root_name || title;
+            appBarTitle =
+              parent.root_name || parent.translated_name || id.toUpperCase();
+            displayTitle =
+              parent.translated_name || parent.root_name || id.toUpperCase();
             blurb = parent.blurb || "";
           } else {
             menuItems = data;
           }
         } else if (data.children) {
           menuItems = data.children;
-          title = data.translated_name || data.root_name || title;
+          appBarTitle =
+            data.root_name || data.translated_name || id.toUpperCase();
+          displayTitle =
+            data.translated_name || data.root_name || id.toUpperCase();
           blurb = data.blurb || "";
         } else {
           menuItems = [data];
-          title = data.translated_name || data.root_name || title;
+          appBarTitle =
+            data.root_name || data.translated_name || id.toUpperCase();
+          displayTitle =
+            data.translated_name || data.root_name || id.toUpperCase();
           blurb = data.blurb || "";
         }
 
         setItems(menuItems);
-        setHeaderInfo({ title, blurb });
+        setHeaderInfo({ appBarTitle, displayTitle, blurb });
       }
     } catch (error) {
       console.error(error);
@@ -77,9 +90,15 @@ export default function MenuScreen() {
               opacity: pressed ? 0.7 : 1,
             },
           ]}
-          onPress={() => 
-            isLeaf 
-              ? router.push(`/reader/${item.uid}`) 
+          onPress={() =>
+            isLeaf
+              ? router.push({
+                  pathname: "/reader/[uid]",
+                  params: {
+                    uid: item.uid,
+                    title: item.root_name || item.uid,
+                  },
+                })
               : router.push(`/menu/${item.uid}`)
           }
         >
@@ -89,26 +108,40 @@ export default function MenuScreen() {
               <Text style={[styles.itemTitle, { color: colors.textPrimary }]}>
                 {item.translated_name || item.root_name || item.uid}
               </Text>
-              
+
               <View style={styles.metaRow}>
                 {item.root_lang_iso && (
-                  <View style={[styles.langBadge, { backgroundColor: colors.surfaceVariant }]}>
-                    <Text style={[styles.langBadgeText, { color: colors.textTertiary }]}>
+                  <View
+                    style={[
+                      styles.langBadge,
+                      { backgroundColor: colors.surfaceVariant },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.langBadgeText,
+                        { color: colors.textTertiary },
+                      ]}
+                    >
                       {item.root_lang_iso.toUpperCase()}
                     </Text>
                   </View>
                 )}
-                <Text style={[styles.itemRoot, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.itemRoot, { color: colors.textSecondary }]}
+                >
                   {(item.root_name || item.acronym || item.uid).toUpperCase()}
                 </Text>
                 {item.child_range && (
-                  <Text style={[styles.itemRange, { color: colors.textSecondary }]}>
+                  <Text
+                    style={[styles.itemRange, { color: colors.textSecondary }]}
+                  >
                     {item.child_range}
                   </Text>
                 )}
               </View>
             </View>
-            
+
             {hasBadge && (
               <View style={[styles.badge, { backgroundColor: "#B58105" }]}>
                 <Text style={styles.badgeText}>
@@ -120,18 +153,26 @@ export default function MenuScreen() {
 
           {/* Blurb / Description */}
           {item.blurb && (
-            <Text 
+            <Text
               style={[styles.itemBlurb, { color: colors.textPrimary }]}
-              numberOfLines={isLeaf ? 2 : undefined}
+              numberOfLines={isLeaf ? undefined : 2}
             >
-              {item.blurb}
+              {stripHtml(item.blurb)}
             </Text>
           )}
 
           {/* Footer for leaf items */}
           {isLeaf && (
             <View style={styles.cardFooter}>
-               <Text style={[styles.uidBadge, { color: colors.textTertiary, backgroundColor: colors.surfaceVariant }]}>
+              <Text
+                style={[
+                  styles.uidBadge,
+                  {
+                    color: colors.textTertiary,
+                    backgroundColor: colors.surfaceVariant,
+                  },
+                ]}
+              >
                 {item.uid.toUpperCase()}
               </Text>
             </View>
@@ -143,7 +184,7 @@ export default function MenuScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Stack.Screen options={{ title: headerInfo.title }} />
+      <Stack.Screen options={{ title: headerInfo.appBarTitle }} />
 
       {loading ? (
         <View style={styles.center}>
@@ -157,11 +198,15 @@ export default function MenuScreen() {
           ListHeaderComponent={
             headerInfo.blurb ? (
               <View style={styles.header}>
-                <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-                  {headerInfo.title}
+                <Text
+                  style={[styles.headerTitle, { color: colors.textPrimary }]}
+                >
+                  {headerInfo.displayTitle}
                 </Text>
-                <Text style={[styles.headerBlurb, { color: colors.textSecondary }]}>
-                  {headerInfo.blurb}
+                <Text
+                  style={[styles.headerBlurb, { color: colors.textSecondary }]}
+                >
+                  {stripHtml(headerInfo.blurb)}
                 </Text>
               </View>
             ) : null
@@ -170,7 +215,9 @@ export default function MenuScreen() {
             !loading ? (
               <View style={styles.center}>
                 <Text style={styles.largeEmoji}>📭</Text>
-                <Text style={[styles.centerText, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.centerText, { color: colors.textSecondary }]}
+                >
                   No items found in this section.
                 </Text>
               </View>
@@ -296,4 +343,3 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 });
-

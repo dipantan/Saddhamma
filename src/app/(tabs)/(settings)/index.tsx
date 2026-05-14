@@ -11,13 +11,30 @@ import {
 import { SectionHeader } from "@/components";
 import { useTheme, spacing, radius, type ThemeMode } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { buildFullTextIndex } from "@/services/DataService";
+import { buildFullTextIndex, addIndexListener, isIndexingInProgress } from "@/services/DataService";
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
-  const [isIndexing, setIsIndexing] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(isIndexingInProgress());
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Idle");
+  const [status, setStatus] = useState(isIndexingInProgress() ? "Indexing…" : "Idle");
+
+  React.useEffect(() => {
+    const removeListener = addIndexListener((processed, total) => {
+      if (total > 0) {
+        setProgress(processed / total);
+        if (processed < total) {
+          setIsIndexing(true);
+          setStatus(`Indexed ${processed} of ${total} suttas`);
+        } else {
+          setIsIndexing(false);
+          setStatus("Indexing Complete");
+        }
+      }
+    });
+
+    return () => removeListener();
+  }, []);
 
   const toggleTheme = () => {
     const next: Record<ThemeMode, ThemeMode> = {
@@ -29,19 +46,13 @@ export default function SettingsScreen() {
   };
 
   const handleStartIndexing = async () => {
-    setIsIndexing(true);
+    if (isIndexing) return;
     setStatus("Indexing…");
     try {
-      await buildFullTextIndex((processed, total) => {
-        setProgress(processed / total);
-        setStatus(`Indexed ${processed} of ${total} suttas`);
-      });
-      setStatus("Indexing Complete");
+      await buildFullTextIndex();
     } catch (err) {
       console.error(err);
       setStatus("Indexing Failed");
-    } finally {
-      setIsIndexing(false);
     }
   };
 

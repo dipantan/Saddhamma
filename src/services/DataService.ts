@@ -5,6 +5,84 @@ const DB_NAME = "sutta_db.sqlite";
 const DATA_DIR = `${Paths.document.uri}sutta_data/`;
 const INDEX_PATH = `${DATA_DIR}sutta_index.json`;
 const SETTINGS_PATH = `${Paths.document.uri}reader_settings.json`;
+const BOOKMARKS_PATH = `${Paths.document.uri}bookmarks.json`;
+
+export interface Bookmark {
+  uid: string;
+  translated_name: string;
+  root_name?: string;
+  timestamp: number;
+}
+
+type IndexProgressCallback = (processed: number, total: number) => void;
+let indexListeners: IndexProgressCallback[] = [];
+let isIndexingActive = false;
+let lastProgress = { processed: 0, total: 0 };
+
+export function addIndexListener(callback: IndexProgressCallback) {
+  indexListeners.push(callback);
+  callback(lastProgress.processed, lastProgress.total);
+  return () => {
+    indexListeners = indexListeners.filter(l => l !== callback);
+  };
+}
+
+export function isIndexingInProgress() {
+  return isIndexingActive;
+}
+
+export async function getBookmarks(): Promise<Bookmark[]> {
+  try {
+    const file = new ExpoFile(BOOKMARKS_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    return [];
+  } catch (error) {
+    console.error("Error loading bookmarks:", error);
+    return [];
+  }
+}
+
+export async function saveBookmarks(bookmarks: Bookmark[]): Promise<void> {
+  try {
+    const file = new ExpoFile(BOOKMARKS_PATH);
+    await file.write(JSON.stringify(bookmarks));
+  } catch (error) {
+    console.error("Error saving bookmarks:", error);
+  }
+}
+
+export async function toggleBookmark(
+  uid: string, 
+  translated_name: string, 
+  root_name?: string
+): Promise<boolean> {
+  const bookmarks = await getBookmarks();
+  const existingIndex = bookmarks.findIndex(b => b.uid === uid);
+  let isBookmarked = false;
+  
+  if (existingIndex >= 0) {
+    bookmarks.splice(existingIndex, 1);
+  } else {
+    bookmarks.unshift({ 
+      uid, 
+      translated_name, 
+      root_name, 
+      timestamp: Date.now() 
+    });
+    isBookmarked = true;
+  }
+  
+  await saveBookmarks(bookmarks);
+  return isBookmarked;
+}
+
+export async function checkBookmark(uid: string): Promise<boolean> {
+  const bookmarks = await getBookmarks();
+  return bookmarks.some(b => b.uid === uid);
+}
 
 export async function saveSettings(settings: any): Promise<void> {
   try {
@@ -167,6 +245,9 @@ export async function populateIndex(onProgress?: (progress: number) => void) {
 export async function buildFullTextIndex(
   onProgress?: (processed: number, total: number) => void,
 ) {
+  if (isIndexingActive) return;
+  isIndexingActive = true;
+  
   const database = await getDb();
 
   // Find uids that need content indexing
@@ -191,19 +272,22 @@ export async function buildFullTextIndex(
       try {
         for (const item of batch) {
           try {
-            const rawContent = await getSuttaContent(item.uid);
-            if (rawContent) {
+            const content = await getSuttaContent(item.uid);
+            if (content) {
               let contentStr = "";
-              if (typeof rawContent === "object") {
-                // Bilara JSON: extract values from segments
-                contentStr = Object.values(rawContent).join(" ");
-              } else if (typeof rawContent === "string") {
-                // Legacy HTML: strip tags
-                contentStr = stripHtml(rawContent);
+              
+              // Extract translation text values
+              if (content.translation_text) {
+                contentStr += Object.values(content.translation_text).join(" ") + " ";
+              }
+              
+              // Extract root text values (Pāli)
+              if (content.root_text) {
+                contentStr += Object.values(content.root_text).join(" ");
               }
 
-              if (contentStr) {
-                await updateStmt.executeAsync([contentStr, item.uid]);
+              if (contentStr.trim()) {
+                await updateStmt.executeAsync([contentStr.trim(), item.uid]);
               }
             }
           } catch (err) {
@@ -219,10 +303,16 @@ export async function buildFullTextIndex(
     if (onProgress) {
       onProgress(processed, total);
     }
+    
+    lastProgress = { processed, total };
+    indexListeners.forEach(l => l(processed, total));
 
     // Small delay to keep the UI responsive
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  
+  isIndexingActive = false;
+  indexListeners.forEach(l => l(total, total)); // Signal completion
 }
 
 /**
@@ -273,25 +363,40 @@ export async function getSuttaContent(
     }
 
     if (entry.translations[selectedAuthor]) {
-      const transFilename = entry.translations[selectedAuthor];
+      const transPath = entry.translations[selectedAuthor];
       try {
-        // Translation file
-        const transFile = new ExpoFile(
-          `${baseDir}translation/en/${selectedAuthor}/${transFilename}`,
-        );
-        if (await transFile.exists) {
-          translationText = JSON.parse(await transFile.text());
-        }
+        // Check if it's a legacy HTML file or a standard Bilara JSON
+        if (transPath.endsWith(".html")) {
+          // Legacy HTML: load from its specific path (relative to baseDir)
+          const transFile = new ExpoFile(`${baseDir}${transPath}`);
+          if (await transFile.exists) {
+            const html = await transFile.text();
+            // Wrap in a single segment for the reader
+            translationText = {
+              [`${uid}:legacy`]: stripHtml(html).trim()
+            };
+          }
+        } else {
+          // Standard Bilara JSON
+          const transFile = new ExpoFile(
+            `${baseDir}translation/en/${selectedAuthor}/${transPath}`,
+          );
+          if (await transFile.exists) {
+            translationText = JSON.parse(await transFile.text());
+          }
 
-        // Comment file (often matching the translation filename pattern)
-        const commentFilename = transFilename.replace("_translation-en-", "_comment-en-");
-        const commentFile = new ExpoFile(
-          `${baseDir}comment/en/${selectedAuthor}/${commentFilename}`,
-        );
-        if (await commentFile.exists) {
-          commentText = JSON.parse(await commentFile.text());
+          // Comment file (often matching the translation filename pattern)
+          const commentFilename = transPath.replace("_translation-en-", "_comment-en-");
+          const commentFile = new ExpoFile(
+            `${baseDir}comment/en/${selectedAuthor}/${commentFilename}`,
+          );
+          if (await commentFile.exists) {
+            commentText = JSON.parse(await commentFile.text());
+          }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error(`Error loading translation for ${uid}:`, e);
+      }
     }
   }
 
@@ -326,25 +431,55 @@ export async function searchSuttas(query: string): Promise<any[]> {
 
   return await database.getAllAsync(
     `
-    SELECT 
-      f.uid, 
-      f.title, 
-      snippet(sutta_fts, 1, '<b>', '</b>', '...', 10) as highlight,
-      snippet(sutta_fts, 2, '<b>', '</b>', '...', 15) as content_highlight
-    FROM sutta_fts f
-    JOIN sutta_index i ON f.uid = i.uid
-    WHERE f.uid = ? OR f.uid LIKE ? OR f.uid = ? OR f.uid LIKE ? OR sutta_fts MATCH ? 
-    ORDER BY (f.uid = ? OR f.uid = ?) DESC, rank 
+    SELECT * FROM (
+      -- High priority: Exact ID or acronym matches
+      SELECT 
+        uid, 
+        title, 
+        NULL as highlight, 
+        NULL as content_highlight,
+        -100 as search_rank
+      FROM sutta_index
+      WHERE uid = ? OR uid = ?
+
+      UNION ALL
+
+      -- Medium priority: Prefix matches or title matches
+      SELECT 
+        uid, 
+        title, 
+        NULL as highlight, 
+        NULL as content_highlight,
+        -50 as search_rank
+      FROM sutta_index
+      WHERE (uid LIKE ? OR uid LIKE ? OR title LIKE ? OR title LIKE ?) 
+      AND NOT (uid = ? OR uid = ?)
+
+      UNION ALL
+
+      -- Text matches via FTS
+      SELECT 
+        uid, 
+        title, 
+        snippet(sutta_fts, 1, '<b>', '</b>', '...', 10) as highlight,
+        snippet(sutta_fts, 2, '<b>', '</b>', '...', 15) as content_highlight,
+        rank as search_rank
+      FROM sutta_fts
+      WHERE sutta_fts MATCH ?
+    )
+    ORDER BY search_rank ASC
     LIMIT 30
   `,
     [
       query,
+      normalizedUid,
       `${query}%`,
-      normalizedUid,
       `${normalizedUid}%`,
-      query,
+      `%${query}%`,
+      `%${normalizedUid}%`,
       query,
       normalizedUid,
+      query,
     ],
   );
 }
