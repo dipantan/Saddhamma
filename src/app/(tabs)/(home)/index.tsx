@@ -26,6 +26,7 @@ export default function HomeScreen() {
   const { colors } = useTheme();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<number | null>(0);
+  const [syncMessage, setSyncMessage] = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -35,17 +36,6 @@ export default function HomeScreen() {
   useEffect(() => {
     checkInitialState();
   }, []);
-
-  const checkInitialState = async () => {
-    const ready = await isDataReady();
-    setDataLoaded(ready);
-    if (!ready) {
-      setShowSyncDialog(true);
-    } else {
-      loadCategories();
-      await checkForUpdates();
-    }
-  };
 
   const loadCategories = async () => {
     const rootCats = await getRootCategories();
@@ -62,7 +52,10 @@ export default function HomeScreen() {
     }, 1000);
 
     try {
-      const success = await syncData((p) => setSyncProgress(p));
+      const success = await syncData((p) => {
+        setSyncProgress(p.percent);
+        setSyncMessage(p.message);
+      });
       if (success) {
         setDataLoaded(true);
         setShowSyncDialog(false);
@@ -76,6 +69,20 @@ export default function HomeScreen() {
     } finally {
       clearInterval(timer);
       setIsSyncing(false);
+    }
+  };
+
+  const checkInitialState = async () => {
+    const ready = await isDataReady();
+    setDataLoaded(ready);
+    if (!ready) {
+      setShowSyncDialog(true);
+    } else {
+      loadCategories();
+      await checkForUpdates(() => {
+        setShowSyncDialog(true);
+        handleSync();
+      });
     }
   };
 
@@ -156,9 +163,7 @@ export default function HomeScreen() {
             <Text style={[styles.modalText, { color: syncError ? colors.error : colors.textSecondary }]}>
               {syncError ||
                 (isSyncing
-                  ? syncProgress === null
-                    ? "Extracting Sutta data…"
-                    : "Downloading Sutta data…"
+                  ? syncMessage || "Syncing data..."
                   : "The library needs to be downloaded for offline use.")}
             </Text>
 

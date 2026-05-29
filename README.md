@@ -1,56 +1,75 @@
-# Welcome to your Expo app 👋
+# Saddhamma
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Saddhamma is a high-performance, offline-first reader for Buddhist texts (Suttas from the Pāli Canon), built with **Expo SDK 56** and **React Native**.
 
-## Get started
+## ✨ Features
 
-1. Install dependencies
+- **Offline-First**: Download and index the entire Pāli Canon for fast, local access without an internet connection.
+- **High Performance**: Optimized for mobile devices using local SQLite indexing and Full-Text Search (FTS5).
+- **Universal Search**: Fast, diacritic-insensitive search across thousands of texts.
+- **Smart Sync**: Resilient data synchronization with GitHub Release assets, featuring automatic update notifications.
+- **Modern UI**: Clean, accessible reading experience with dark mode support and customizable themes.
+- **Deep Navigation**: Easily explore the Piṭakas (Sutta, Vinaya, Abhidhamma) with a hierarchical menu system.
 
+## 🛠️ Tech Stack
+
+- **Framework**: [Expo SDK 56](https://expo.dev/) (React Native)
+- **Navigation**: [Expo Router](https://docs.expo.dev/router/introduction/) (File-based routing)
+- **Database**: [expo-sqlite](https://docs.expo.dev/versions/latest/sdk/sqlite/) with FTS5 support
+- **FileSystem**: [expo-file-system](https://docs.expo.dev/versions/latest/sdk/filesystem/) for raw data management
+- **Animations**: [react-native-reanimated](https://docs.swmansion.com/react-native-reanimated/)
+- **Icons**: [expo-symbols](https://docs.expo.dev/versions/latest/sdk/symbols/)
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js (LTS)
+- Yarn or npm
+- Expo Go (for development)
+
+### Installation
+
+1. **Clone the repository**
    ```bash
+   git clone https://github.com/yourusername/Saddhamma.git
+   cd Saddhamma
+   ```
+
+2. **Install dependencies**
+   ```bash
+   yarn install
+   # or
    npm install
    ```
 
-2. Start the app
-
+3. **Start the development server**
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+### 📱 Running on Device
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Scan the QR code with the **Expo Go** app (Android) or the **Camera** app (iOS).
+- For native builds, use:
+  ```bash
+  npm run android
+  # or
+  npm run ios
+  ```
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🏗️ Architecture
 
-## Get a fresh project
+The app is designed with a robust offline sync engine:
 
-When you're ready, run:
+1. **Sync Engine** ([SyncService.ts](src/services/SyncService.ts)): Fetches compressed data from GitHub, extracts it, and manages versioning.
+2. **Data Indexer** ([DataService.ts](src/services/DataService.ts)): Populates a local SQLite database with metadata and Full-Text Search indexes from the extracted JSON files.
+3. **Reader UI**: A segmented text renderer optimized for long-form reading.
 
-```bash
-npm run reset-project
-```
+## 📜 License
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+This project is licensed under the **GPL-3.0-only** License - see the [LICENSE](LICENSE) file for details.
 
-### Other setup steps
+---
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Built with ❤️ for the Dhamma.

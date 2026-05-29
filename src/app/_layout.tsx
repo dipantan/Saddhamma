@@ -1,9 +1,67 @@
 import { ThemeProvider, useTheme } from "@/theme";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View } from "react-native";
-import { useEffect } from "react";
-import { isDataReady, buildFullTextIndex } from "@/services/DataService";
+import { Animated, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  isDataReady,
+  buildFullTextIndex,
+  addIndexListener,
+  isIndexingInProgress,
+} from "@/services/DataService";
+
+function GlobalProgressBar() {
+  const [progress, setProgress] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [widthAnim] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    setVisible(isIndexingInProgress());
+
+    const unsubscribe = addIndexListener((processed, total) => {
+      const active = isIndexingInProgress();
+      setVisible(active);
+
+      if (total > 0) {
+        const percent = processed / total;
+        setProgress(percent);
+        
+        Animated.timing(widthAnim, {
+          toValue: percent,
+          duration: 300,
+          useNativeDriver: false,
+        }).start();
+      } else {
+        setProgress(0);
+        widthAnim.setValue(0);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  if (!visible || progress >= 1) return null;
+
+  return (
+    <View style={[styles.progressContainer, { top: insets.top, backgroundColor: colors.divider }]}>
+      <Animated.View
+        style={[
+          styles.progressBar,
+          {
+            backgroundColor: "#FFD54F", // Saffron / ochre accent color
+            width: widthAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: ["0%", "100%"],
+            }),
+          },
+        ]}
+      />
+    </View>
+  );
+}
 
 function RootNavigator() {
   const { colors, isDark } = useTheme();
@@ -30,6 +88,7 @@ function RootNavigator() {
   return (
     <>
       <StatusBar style={isDark ? "light" : "dark"} />
+      <GlobalProgressBar />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -78,3 +137,17 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  progressContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 3,
+    zIndex: 9999,
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%",
+  },
+});

@@ -17,7 +17,10 @@ export interface VersionInfo {
   timestamp: string;
 }
 
-export async function checkForUpdates(): Promise<VersionInfo | false> {
+export async function checkForUpdates(
+  onUpdateAction?: () => void,
+  showNotification: boolean = true
+): Promise<VersionInfo | false> {
   try {
     const response = await fetch(VERSION_URL);
     if (!response.ok) return false;
@@ -34,20 +37,22 @@ export async function checkForUpdates(): Promise<VersionInfo | false> {
     }
 
     // Notify user that an update is available
-    Snackbar.show({
-      text: `New Sutta data available`,
-      duration: Snackbar.LENGTH_INDEFINITE,
-      action: {
-        text: 'UPDATE',
-        textColor: '#34C759',
-        onPress: () => {
-          // This would ideally trigger the sync process.
-          // For now, we'll just log it. The component calling this 
-          // should handle the actual trigger if needed.
-          console.log("User requested update via Snackbar");
+    if (showNotification) {
+      Snackbar.show({
+        text: `New Sutta data available`,
+        duration: Snackbar.LENGTH_INDEFINITE,
+        action: {
+          text: 'UPDATE',
+          textColor: '#34C759',
+          onPress: () => {
+            console.log("User requested update via Snackbar");
+            if (onUpdateAction) {
+              onUpdateAction();
+            }
+          },
         },
-      },
-    });
+      });
+    }
 
     return latest;
   } catch (error) {
@@ -61,17 +66,23 @@ export async function checkForUpdates(): Promise<VersionInfo | false> {
   }
 }
 
+export interface SyncProgress {
+  percent: number | null;
+  message: string;
+}
+
 export async function syncData(
-  onProgress: (percent: number | null) => void,
+  onProgress: (progress: SyncProgress) => void,
 ): Promise<boolean> {
   try {
+    onProgress({ percent: 0, message: "Checking for updates..." });
     const ready = await isDataReady();
-    const updateInfo = await checkForUpdates();
+    const updateInfo = await checkForUpdates(undefined, false);
 
     // If data is ready and no updates are available, skip.
-    // If data is NOT ready, we MUST proceed even if updateInfo is false (version match).
     if (ready && !updateInfo) {
       console.log("Data is ready and no updates found. Skipping sync.");
+      onProgress({ percent: 1, message: "Data is up to date" });
       return true;
     }
 
@@ -89,6 +100,7 @@ export async function syncData(
     }
 
     console.log("Starting data sync...");
+    onProgress({ percent: 0, message: "Connecting to server..." });
     Snackbar.show({
       text: 'Starting data sync...',
       duration: Snackbar.LENGTH_SHORT,
@@ -98,7 +110,10 @@ export async function syncData(
     const downloadTask = ExpoFile.createDownloadTask(DATA_URL, zipFile, {
       onProgress: (progress) => {
         const percent = Math.round((progress.bytesWritten / progress.totalBytes) * 100);
-        onProgress(percent / 100);
+        onProgress({
+          percent: percent / 100,
+          message: `Downloading Sutta data (${percent}%)`,
+        });
       }
     });
 
@@ -112,7 +127,7 @@ export async function syncData(
 
     console.log("Extracting data...");
     const unzipStartTime = Date.now();
-    onProgress(null); // Switch to indeterminate
+    onProgress({ percent: null, message: "Extracting Sutta database..." });
     Snackbar.show({
       text: 'Extracting files...',
       duration: Snackbar.LENGTH_SHORT,
@@ -130,6 +145,7 @@ export async function syncData(
     // Normalize structure if zipped with a 'data' folder
     const nestedData = new Directory(`${dataDir.uri}data/`);
     if (await nestedData.exists) {
+      onProgress({ percent: null, message: "Optimizing directory structure..." });
       console.log("Normalizing nested data folder...");
       const contents = await nestedData.list();
       for (const item of contents) {
@@ -156,17 +172,25 @@ export async function syncData(
     await versionFile.write(JSON.stringify(finalUpdateInfo));
 
     console.log("Populating index...");
+    onProgress({ percent: 0, message: "Finalizing index..." });
     Snackbar.show({
       text: 'Finalizing index...',
       duration: Snackbar.LENGTH_SHORT,
     });
-    await populateIndex();
+    
+    await populateIndex((progressPercent) => {
+      onProgress({
+        percent: progressPercent,
+        message: `Indexing database (${Math.round(progressPercent * 100)}%)`,
+      });
+    });
 
     if (await zipFile.exists) {
       await zipFile.delete();
     }
 
     console.log("Sync complete!");
+    onProgress({ percent: 1, message: "Sync complete!" });
     Snackbar.show({
       text: 'Sync complete!',
       duration: Snackbar.LENGTH_LONG,
@@ -175,6 +199,7 @@ export async function syncData(
     return true;
   } catch (error) {
     console.error("Sync error:", error);
+    onProgress({ percent: null, message: "Sync failed!" });
     Snackbar.show({
       text: 'Sync failed!',
       duration: Snackbar.LENGTH_LONG,

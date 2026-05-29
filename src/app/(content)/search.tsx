@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,9 +9,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { searchSuttas } from "@/services/DataService";
+import { searchSuttas, stripHtml } from "@/services/DataService";
 import { useTheme, spacing, radius } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function SearchScreen() {
   const { q } = useLocalSearchParams<{ q: string }>();
@@ -20,15 +22,18 @@ export default function SearchScreen() {
   const [query, setQuery] = useState(q || "");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (q) {
-      handleSearch(q);
+      performSearch(q);
     }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [q]);
 
-  const handleSearch = async (text: string) => {
-    setQuery(text);
+  const performSearch = async (text: string) => {
     if (!text.trim()) {
       setResults([]);
       return;
@@ -44,37 +49,105 @@ export default function SearchScreen() {
     }
   };
 
-  const renderResult = ({ item }: { item: any }) => (
-    <Pressable
-      style={({ pressed }) => [
-        styles.resultItem,
-        {
-          backgroundColor: colors.card,
-          borderBottomColor: colors.divider,
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
-      onPress={() => router.push(`/reader/${item.uid}`)}
-    >
-      <View style={styles.resultMain}>
-        <Text style={[styles.resultTitle, { color: colors.textPrimary }]}>
-          {item.title || item.uid.toUpperCase()}
-        </Text>
-        <Text 
-          style={[styles.resultSnippet, { color: colors.textSecondary }]}
-          numberOfLines={2}
-        >
-          {item.content_highlight || item.highlight || item.uid.toUpperCase()}
-        </Text>
-      </View>
-      <View style={styles.resultBadge}>
-        <Text style={[styles.badgeText, { color: colors.textTertiary }]}>
-          {item.uid.toUpperCase()}
-        </Text>
-        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-      </View>
-    </Pressable>
-  );
+  const handleTextChange = useCallback((text: string) => {
+    setQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!text.trim()) {
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      performSearch(text);
+    }, SEARCH_DEBOUNCE_MS);
+  }, []);
+
+  const handleSubmit = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    performSearch(query);
+  }, [query]);
+
+
+  const renderSnippetText = (text: string, textColor: string, highlightColor: string) => {
+    if (!text) return null;
+    const parts = text.split(/(<b>.*?<\/b>)/g);
+    return (
+      <Text style={{ color: textColor, fontSize: 13, lineHeight: 18 }}>
+        {parts.map((part, index) => {
+          if (part.startsWith("<b>") && part.endsWith("</b>")) {
+            const content = part.substring(3, part.length - 4);
+            return (
+              <Text key={index} style={{ fontWeight: "700", color: highlightColor }}>
+                {content}
+              </Text>
+            );
+          }
+          return part;
+        })}
+      </Text>
+    );
+  };
+
+  const renderResult = ({ item }: { item: any }) => {
+    const displayTitle = item.title || item.uid.toUpperCase();
+    const rootTitle = item.root_name;
+    const acronym = item.acronym || item.uid.toUpperCase();
+    const snippet = item.content_highlight || item.highlight;
+    const blurb = item.blurb;
+
+    return (
+      <Pressable
+        style={({ pressed }) => [
+          styles.resultItem,
+          {
+            backgroundColor: colors.card,
+            borderBottomColor: colors.divider,
+            opacity: pressed ? 0.75 : 1,
+          },
+        ]}
+        onPress={() => router.push(`/reader/${item.uid}`)}
+      >
+        <View style={styles.resultMain}>
+          {/* Top Row: Acronym & Root Name */}
+          <View style={styles.resultMetaRow}>
+            <View style={[styles.acronymBadge, { backgroundColor: colors.surfaceVariant }]}>
+              <Text style={[styles.acronymText, { color: colors.textPrimary }]}>
+                {acronym}
+              </Text>
+            </View>
+            {rootTitle && (
+              <Text style={[styles.rootTitleText, { color: colors.textTertiary }]} numberOfLines={1}>
+                {rootTitle}
+              </Text>
+            )}
+          </View>
+
+          {/* Main Sutta Title */}
+          <Text style={[styles.resultTitle, { color: colors.textPrimary }]}>
+            {displayTitle}
+          </Text>
+
+          {/* Sutta Blurb (if available) */}
+          {blurb && (
+            <Text style={[styles.resultBlurb, { color: colors.textSecondary }]} numberOfLines={2}>
+              {stripHtml(blurb)}
+            </Text>
+          )}
+
+          {/* Snippet Match (if available) */}
+          {snippet && (
+            <View style={[styles.snippetContainer, { backgroundColor: colors.surface, borderColor: colors.divider }]}>
+              <Text style={[styles.snippetLabel, { color: colors.textTertiary }]}>MATCH</Text>
+              {renderSnippetText(snippet, colors.textPrimary, colors.primary)}
+            </View>
+          )}
+        </View>
+        
+        <View style={styles.arrowContainer}>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -87,14 +160,15 @@ export default function SearchScreen() {
             placeholder="Search suttas…"
             placeholderTextColor={colors.textTertiary}
             value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={() => handleSearch(query)}
+            onChangeText={handleTextChange}
+            onSubmitEditing={handleSubmit}
             returnKeyType="search"
             autoFocus={!q}
           />
           {query.length > 0 && (
-            <Pressable onPress={() => setQuery("")}>
+            <Pressable onPress={() => handleTextChange("")}>
               <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+
             </Pressable>
           )}
         </View>
@@ -187,22 +261,51 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: spacing.md,
   },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: "600",
+  resultMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: spacing.xs,
   },
-  resultSnippet: {
-    fontSize: 14,
-    lineHeight: 20,
+  acronymBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    marginRight: spacing.sm,
   },
-  resultBadge: {
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-  },
-  badgeText: {
+  acronymText: {
     fontSize: 10,
     fontWeight: "700",
+  },
+  rootTitleText: {
+    fontSize: 12,
+    fontStyle: "italic",
+    flex: 1,
+  },
+  resultTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  resultBlurb: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: spacing.xs,
+  },
+  snippetContainer: {
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  snippetLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  arrowContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingLeft: spacing.sm,
   },
   center: {
     flex: 1,

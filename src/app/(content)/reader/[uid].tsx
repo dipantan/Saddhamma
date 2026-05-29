@@ -7,7 +7,7 @@ import {
   stripHtml,
   toggleBookmark,
 } from "@/services/DataService";
-import { spacing, useTheme } from "@/theme";
+import { spacing, radius, useTheme } from "@/theme";
 import {
   Button,
   Checkbox,
@@ -35,14 +35,42 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   BackHandler,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const SERIF_FONT = Platform.select({
+  ios: "Georgia",
+  android: "serif",
+  default: "serif",
+});
+
+const getLanguageName = (langCode: string): string => {
+  if (!langCode) return "Root";
+  const code = langCode.toLowerCase().trim();
+  switch (code) {
+    case "pli":
+      return "Pāli";
+    case "lzh":
+    case "zh":
+      return "Chinese";
+    case "san":
+    case "sa":
+      return "Sanskrit";
+    case "en":
+      return "English";
+    default:
+      return code.charAt(0).toUpperCase() + code.slice(1);
+  }
+};
 
 export default function ReaderScreen() {
   const { uid, title } = useLocalSearchParams<{ uid: string; title: string }>();
@@ -61,6 +89,17 @@ export default function ReaderScreen() {
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
+  const resolvedRootLang = React.useMemo(() => {
+    if (data?.root_lang) return data.root_lang;
+    const lowerUid = uid?.toLowerCase() || "";
+    if (lowerUid.startsWith("t") || lowerUid.startsWith("da") || lowerUid.startsWith("ma") || lowerUid.startsWith("sa") || lowerUid.startsWith("ea")) {
+      return "lzh";
+    } else if (lowerUid.startsWith("arv")) {
+      return "san";
+    }
+    return "pli";
+  }, [data?.root_lang, uid]);
+
   useEffect(() => {
     initReader();
   }, [uid]);
@@ -78,7 +117,6 @@ export default function ReaderScreen() {
         if (saved.fontSize !== undefined) setFontSize(saved.fontSize);
       }
       const result = await getSuttaContent(uid);
-      console.log("result", result);
       setData(result);
 
       const bookmarked = await checkBookmark(uid);
@@ -121,6 +159,69 @@ export default function ReaderScreen() {
     return () => backHandler.remove();
   }, [menuExpanded, selectedComment, router]);
 
+  const handleCopyEntireSutta = async () => {
+    if (!data) return;
+    try {
+      let copyText = "";
+
+      const getBestTitle = (textMap: any) => {
+        if (!textMap) return "";
+        const keys = Object.keys(textMap);
+        if (keys.length === 0) return "";
+        const suttaNameKey = keys.find((k) => k.endsWith(":0.2"));
+        const firstKey = keys[0];
+        return textMap[suttaNameKey || firstKey] || "";
+      };
+
+      const transTitle = getBestTitle(data?.translation_text);
+      const rootTitle = getBestTitle(data?.root_text);
+      const acronym = data?.acronym || uid?.toUpperCase();
+
+      if (acronym) copyText += `${acronym}\n`;
+      if (transTitle) copyText += `${stripHtml(transTitle)}\n`;
+      if (rootTitle) copyText += `${stripHtml(rootTitle)}\n`;
+      copyText += "\n";
+
+      sortedSegments.forEach((segId) => {
+        const isHeader = segId.includes(":legacy:")
+          ? (segId.split(":")[2] === "division" || segId.split(":")[2] === "h1" || segId.split(":")[2] === "h2" || segId.split(":")[2] === "h3")
+          : segId.split(":")[1]?.startsWith("0.");
+
+        if (isHeader) return;
+
+        const rootLine = data?.root_text?.[segId];
+        const transLine = data?.translation_text?.[segId];
+
+        if (showPali && rootLine) {
+          copyText += `${stripHtml(rootLine)}\n`;
+        }
+        if (transLine) {
+          copyText += `${stripHtml(transLine)}\n`;
+        }
+        if ((showPali && rootLine) || transLine) {
+          copyText += "\n";
+        }
+      });
+
+      await Clipboard.setStringAsync(copyText.trim());
+      Alert.alert("Sutta Copied", "The entire sutta text has been copied to your clipboard.");
+      setMenuExpanded(false);
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Error", "Failed to copy sutta text.");
+    }
+  };
+
+  const hasTranslation = React.useMemo(() => {
+    if (!data || !data.translation_text) return false;
+    return Object.keys(data.translation_text).length > 0;
+  }, [data?.translation_text]);
+
+  const isLegacyTranslation = React.useMemo(() => {
+    if (!data || !data.translation_text) return false;
+    return Object.keys(data.translation_text).some(k => k.includes(":legacy"));
+  }, [data?.translation_text]);
+
   const sortedSegments = React.useMemo(() => {
     if (!data) return [];
     return Array.from(
@@ -142,13 +243,13 @@ export default function ReaderScreen() {
         comment={data?.comment_text?.[segId]}
         colors={colors}
         fontSize={fontSize}
-        showPali={showPali}
+        showPali={showPali || !hasTranslation}
         showSegments={showSegments}
         showComments={showComments}
         onCommentPress={setSelectedComment}
       />
     ),
-    [data, colors, fontSize, showPali, showSegments, showComments],
+    [data, colors, fontSize, showPali, showSegments, showComments, hasTranslation],
   );
 
   if (loading) return <LoadingState message="Loading Dhamma…" />;
@@ -258,7 +359,7 @@ export default function ReaderScreen() {
                             color={colors.textPrimary}
                             style={{ typography: "bodyLarge" }}
                           >
-                            Pāli Text
+                            {`${getLanguageName(resolvedRootLang)} Text`}
                           </NativeText>
                         </DropdownMenuItem.Text>
                       </DropdownMenuItem>
@@ -307,6 +408,24 @@ export default function ReaderScreen() {
                             style={{ typography: "bodyLarge" }}
                           >
                             Comments
+                          </NativeText>
+                        </DropdownMenuItem.Text>
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem onClick={handleCopyEntireSutta}>
+                        <DropdownMenuItem.LeadingIcon>
+                          <Ionicons
+                            name="copy-outline"
+                            size={20}
+                            color={colors.textPrimary}
+                          />
+                        </DropdownMenuItem.LeadingIcon>
+                        <DropdownMenuItem.Text>
+                          <NativeText
+                            color={colors.textPrimary}
+                            style={{ typography: "bodyLarge" }}
+                          >
+                            Copy entire sutta
                           </NativeText>
                         </DropdownMenuItem.Text>
                       </DropdownMenuItem>
@@ -376,6 +495,23 @@ export default function ReaderScreen() {
           initialNumToRender={15}
           maxToRenderPerBatch={10}
           windowSize={10}
+          ListHeaderComponent={
+            !hasTranslation && data ? (
+              <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
+                  No English translation is available for this text. Showing {getLanguageName(resolvedRootLang)} root text.
+                </Text>
+              </View>
+            ) : isLegacyTranslation ? (
+              <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
+                  This is a legacy, non-aligned translation by {data?.author_uid ? data.author_uid.charAt(0).toUpperCase() + data.author_uid.slice(1) : "author"}. {getLanguageName(resolvedRootLang)} and English texts are shown independently.
+                </Text>
+              </View>
+            ) : null
+          }
         />
       </View>
 
@@ -428,45 +564,102 @@ const SegmentItem = React.memo(
     showComments,
     onCommentPress,
   }: any) => {
-    const segmentNum = segId.split(":")[1];
-    const isHeader = segmentNum?.startsWith("0.");
+    const isLegacy = segId.includes(":legacy:");
+    let isHeader = false;
+    let isCollection = false;
+    let isTitle = false;
+    let isSubtitle = false;
+    let segmentNum = segId.split(":")[1];
+
+    if (isLegacy) {
+      const parts = segId.split(":");
+      const tag = parts[2];
+      segmentNum = parts[3]; // Numeric index of the legacy paragraph
+      if (tag === "division") {
+        isHeader = true;
+        isCollection = true;
+      } else if (tag === "h1") {
+        isHeader = true;
+        isTitle = true;
+      } else if (tag === "h2" || tag === "h3") {
+        isHeader = true;
+        isSubtitle = true;
+      }
+    } else {
+      isHeader = segmentNum?.startsWith("0.");
+      if (isHeader) {
+        isCollection = segmentNum === "0.1";
+        isTitle = segmentNum === "0.2";
+        isSubtitle = !isCollection && !isTitle;
+      }
+    }
 
     if (!trans && (!showPali || !root)) return null;
 
     if (isHeader) {
-      const isTopLevel = segmentNum.startsWith("0.");
       return (
         <View style={styles.headerSegment}>
-          {trans && (
-            <Text
-              selectable
-              style={[
-                isTopLevel ? styles.mainTitle : styles.sectionTitle,
-                {
-                  color: colors.textPrimary,
-                  fontSize: fontSize + (isTopLevel ? 7 : 1),
-                  textAlign: isTopLevel ? "center" : "left",
-                },
-              ]}
-            >
-              {trans}
-            </Text>
-          )}
-          {showPali && root && (
-            <Text
-              selectable
-              style={[
-                isTopLevel ? styles.mainTitlePali : styles.sectionTitlePali,
-                {
-                  color: colors.textPali,
-                  fontSize: fontSize - 1,
-                  textAlign: isTopLevel ? "center" : "left",
-                },
-              ]}
-            >
-              {root}
-            </Text>
-          )}
+          <Text selectable style={{ textAlign: "center", width: "100%" }}>
+            {isCollection && trans && (
+              <Text
+                style={[
+                  styles.collectionTitle,
+                  {
+                    color: colors.textSecondary,
+                    fontSize: Math.max(12, fontSize - 5),
+                  },
+                ]}
+              >
+                {trans.toUpperCase()}
+                {"\n"}
+              </Text>
+            )}
+            {isTitle && trans && (
+              <Text
+                style={[
+                  styles.mainTitle,
+                  {
+                    color: colors.textPrimary,
+                    fontSize: fontSize + 10,
+                    lineHeight: (fontSize + 10) * 1.3,
+                  },
+                ]}
+              >
+                {trans}
+                {showPali && root ? "\n" : ""}
+              </Text>
+            )}
+            {showPali && root && (
+              <Text
+                style={[
+                  styles.paliText,
+                  styles.headerPali,
+                  {
+                    color: colors.textPali,
+                    fontSize: isTitle ? fontSize + 1 : fontSize - 2,
+                    lineHeight: isTitle ? (fontSize + 1) * 1.4 : (fontSize - 2) * 1.4,
+                  },
+                ]}
+              >
+                {root}
+                {isSubtitle && trans ? "\n" : ""}
+              </Text>
+            )}
+            {isSubtitle && trans && (
+              <Text
+                style={[
+                  styles.subtitle,
+                  {
+                    color: colors.textSecondary,
+                    fontSize: fontSize - 1,
+                    lineHeight: (fontSize - 1) * 1.4,
+                  },
+                ]}
+              >
+                {trans}
+              </Text>
+            )}
+          </Text>
         </View>
       );
     }
@@ -483,58 +676,49 @@ const SegmentItem = React.memo(
           </View>
         )}
         <View style={styles.segmentContent}>
-          {trans && (
-            <Text
-              selectable
-              style={[
-                styles.bodyText,
-                {
-                  color: colors.textPrimary,
-                  fontSize,
-                  lineHeight: fontSize * 1.6,
-                },
-              ]}
-            >
-              {trans}
-              {showComments && comment && (
-                <View style={styles.asteriskContainer}>
-                  <Pressable
+          <Text selectable style={{ width: "100%" }}>
+            {showPali && root && (
+              <Text
+                style={[
+                  styles.bodyText,
+                  styles.paliText,
+                  {
+                    color: colors.textPali,
+                    fontSize: fontSize - 1.5,
+                    lineHeight: (fontSize - 1.5) * 1.5,
+                  },
+                ]}
+              >
+                {root}
+                {trans ? "\n" : ""}
+              </Text>
+            )}
+            {trans && (
+              <Text
+                style={[
+                  styles.bodyText,
+                  {
+                    color: colors.textPrimary,
+                    fontSize,
+                    lineHeight: fontSize * 1.6,
+                  },
+                ]}
+              >
+                {trans}
+                {showComments && comment && (
+                  <Text
                     onPress={() => onCommentPress(comment)}
-                    hitSlop={20}
-                    style={({ pressed }) => ({
-                      opacity: pressed ? 0.5 : 1,
-                      padding: 4,
-                    })}
+                    style={[
+                      styles.commentAsterisk,
+                      { color: colors.primary, fontSize: fontSize * 0.85 },
+                    ]}
                   >
-                    <Text
-                      style={[
-                        styles.commentAsterisk,
-                        { color: colors.primary },
-                      ]}
-                    >
-                      *
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
-            </Text>
-          )}
-          {showPali && root && (
-            <Text
-              selectable
-              style={[
-                styles.bodyText,
-                styles.paliText,
-                {
-                  color: colors.textPali,
-                  fontSize: fontSize - 1,
-                  lineHeight: (fontSize - 1) * 1.6,
-                },
-              ]}
-            >
-              {root}
-            </Text>
-          )}
+                    *
+                  </Text>
+                )}
+              </Text>
+            )}
+          </Text>
         </View>
       </View>
     );
@@ -558,67 +742,88 @@ const styles = StyleSheet.create({
     fontSize: 48,
   },
   listContent: {
-    paddingBottom: spacing.huge * 2,
+    paddingBottom: spacing.huge * 3,
+    paddingHorizontal: spacing.xl,
+    maxWidth: 680,
+    width: "100%",
+    alignSelf: "center",
+  },
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginVertical: spacing.md,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
   headerSegment: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
-    backgroundColor: "rgba(0,0,0,0.02)",
-    marginBottom: spacing.md,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxxl,
+    alignItems: "center",
+    marginBottom: spacing.xl,
+    width: "100%",
+  },
+  collectionTitle: {
+    fontFamily: SERIF_FONT,
+    fontWeight: "600",
+    letterSpacing: 2.0,
+    opacity: 0.7,
+    marginBottom: spacing.sm,
+    textAlign: "center",
   },
   mainTitle: {
-    fontWeight: "700",
+    fontFamily: SERIF_FONT,
+    fontWeight: "400",
     textAlign: "center",
+    marginBottom: spacing.xs,
   },
-  mainTitlePali: {
+  subtitle: {
+    fontFamily: SERIF_FONT,
     fontStyle: "italic",
-    textAlign: "center",
+    opacity: 0.8,
     marginTop: spacing.sm,
+    textAlign: "center",
   },
-  sectionTitle: {
-    fontWeight: "700",
-  },
-  sectionTitlePali: {
+  headerPali: {
     fontStyle: "italic",
     marginTop: spacing.xs,
+    opacity: 0.95,
+    textAlign: "center",
   },
   bodySegment: {
     flexDirection: "row",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
   },
   segmentLeft: {
-    width: 40,
-    alignItems: "flex-end",
-    paddingRight: spacing.md,
+    width: 44,
+    alignItems: "flex-start",
+    paddingRight: spacing.sm,
     paddingTop: 4,
   },
   segmentNumber: {
     fontSize: 10,
-    fontWeight: "600",
-    opacity: 0.5,
+    fontWeight: "400",
+    opacity: 0.35,
   },
   segmentContent: {
     flex: 1,
   },
   bodyText: {
-    fontFamily: "System",
+    fontFamily: SERIF_FONT,
   },
   paliText: {
+    fontFamily: SERIF_FONT,
     fontStyle: "italic",
-    marginTop: spacing.sm,
-    opacity: 0.8,
   },
   commentAsterisk: {
     fontWeight: "bold",
-    fontSize: 20,
-  },
-  asteriskContainer: {
-    marginLeft: 4,
-    justifyContent: "center",
-    alignItems: "center",
-    height: 24,
-    width: 24,
+    paddingLeft: 2,
+    lineHeight: 0,
   },
   iconBtn: {
     padding: spacing.sm,
