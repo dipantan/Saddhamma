@@ -43,6 +43,15 @@
         "projectId": "8e2b9803-fb80-4c79-bf53-99640ce5834c"
       }
     },
+    "updates": {
+      "url": "https://u.expo.dev/8e2b9803-fb80-4c79-bf53-99640ce5834c",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "owner": "dipantan"
   }
 }
