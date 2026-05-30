@@ -1,15 +1,17 @@
+import {
+  addIndexListener,
+  buildFullTextIndex,
+  isDataReady,
+  isIndexingInProgress,
+} from "@/services/DataService";
 import { ThemeProvider, useTheme } from "@/theme";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { Animated, StyleSheet, View } from "react-native";
+import * as Updates from "expo-updates";
 import { useEffect, useState } from "react";
+import { Animated, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  isDataReady,
-  buildFullTextIndex,
-  addIndexListener,
-  isIndexingInProgress,
-} from "@/services/DataService";
+import { Snackbar } from "react-native-snackbar";
 
 function GlobalProgressBar() {
   const [progress, setProgress] = useState(0);
@@ -19,7 +21,9 @@ function GlobalProgressBar() {
   const [widthAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    setVisible(isIndexingInProgress());
+    // Check initial state only once on mount
+    const isActive = isIndexingInProgress();
+    setVisible(isActive);
 
     const unsubscribe = addIndexListener((processed, total) => {
       const active = isIndexingInProgress();
@@ -41,7 +45,7 @@ function GlobalProgressBar() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [widthAnim]);
 
   if (!visible || progress >= 1) return null;
 
@@ -67,6 +71,35 @@ function RootNavigator() {
   const { colors, isDark } = useTheme();
   
   useEffect(() => {
+    // Handle OTA Updates
+    async function onFetchUpdateAsync() {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          
+          Snackbar.show({
+            text: "Update downloaded successfully",
+            duration: Snackbar.LENGTH_INDEFINITE,
+            action: {
+              text: "RESTART",
+              textColor: "#FFD54F",
+              onPress: () => {
+                Updates.reloadAsync();
+              },
+            },
+          });
+        }
+      } catch (error) {
+        console.log(`Error fetching latest Expo update: ${error}`);
+      }
+    }
+
+    if (!__DEV__) {
+      onFetchUpdateAsync();
+    }
+
     const startBackgroundTasks = async () => {
       try {
         // Wait a bit for the app to settle

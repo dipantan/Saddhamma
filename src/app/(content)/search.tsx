@@ -1,17 +1,17 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-} from "react-native";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { searchSuttas, stripHtml } from "@/services/DataService";
-import { useTheme, spacing, radius } from "@/theme";
+import { radius, spacing, useTheme } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -24,16 +24,7 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (q) {
-      performSearch(q);
-    }
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [q]);
-
-  const performSearch = async (text: string) => {
+  const performSearch = useCallback(async (text: string) => {
     if (!text.trim()) {
       setResults([]);
       return;
@@ -47,7 +38,18 @@ export default function SearchScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (q && isMounted) {
+      performSearch(q);
+    }
+    return () => {
+      isMounted = false;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [q, performSearch]);
 
   const handleTextChange = useCallback((text: string) => {
     setQuery(text);
@@ -200,7 +202,7 @@ export default function SearchScreen() {
               <View style={styles.center}>
                 <Text style={styles.largeEmoji}>🔍</Text>
                 <Text style={[styles.centerText, { color: colors.textSecondary }]}>
-                  No results found for "{query}"
+                  No results found for &quot;{query}&quot;
                 </Text>
                 <Text style={[styles.subText, { color: colors.textTertiary }]}>
                   Try a different keyword or sutta ID

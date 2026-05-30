@@ -1,27 +1,26 @@
-import React, { useEffect, useState } from "react";
-import { View, StyleSheet, FlatList, Pressable, Text } from "react-native";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { EmptyState } from "@/components";
-import { useTheme, spacing, radius } from "@/theme";
-import { getBookmarks, Bookmark, toggleBookmark } from "@/services/DataService";
+import { Bookmark, getBookmarks, toggleBookmark } from "@/services/DataService";
+import { radius, spacing, useTheme } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Alert } from "react-native";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function BookmarksScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
 
+  const loadBookmarks = useCallback(async () => {
+    const data = await getBookmarks();
+    setBookmarks(data);
+  }, []);
+
   useFocusEffect(
     React.useCallback(() => {
       loadBookmarks();
-    }, [])
+    }, [loadBookmarks])
   );
-
-  const loadBookmarks = async () => {
-    const data = await getBookmarks();
-    setBookmarks(data);
-  };
 
   const handleRemove = (item: Bookmark) => {
     Alert.alert(

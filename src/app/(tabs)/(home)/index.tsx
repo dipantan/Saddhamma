@@ -1,18 +1,18 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  Pressable,
-  Modal,
-  ActivityIndicator,
-} from "react-native";
-import { useRouter, Stack } from "expo-router";
-import { isDataReady, getRootCategories } from "@/services/DataService";
+import { getRootCategories, isDataReady } from "@/services/DataService";
 import { checkForUpdates, syncData } from "@/services/SyncService";
 import { useTheme } from "@/theme/ThemeContext";
-import { spacing, radius } from "@/theme/tokens";
+import { radius, spacing } from "@/theme/tokens";
+import { Stack, useRouter } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 const CATEGORY_EMOJIS: Record<string, string> = {
   sutta: "☸️",
   vinaya: "📜",
@@ -32,15 +32,17 @@ export default function HomeScreen() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
-  useEffect(() => {
-    checkInitialState();
+  const loadCategories = useCallback(async () => {
+    setIsLoadingCategories(true);
+    try {
+      const rootCats = await getRootCategories();
+      setCategories(rootCats);
+    } finally {
+      setIsLoadingCategories(false);
+    }
   }, []);
-
-  const loadCategories = async () => {
-    const rootCats = await getRootCategories();
-    setCategories(rootCats);
-  };
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -72,7 +74,7 @@ export default function HomeScreen() {
     }
   };
 
-  const checkInitialState = async () => {
+  const checkInitialState = useCallback(async () => {
     const ready = await isDataReady();
     setDataLoaded(ready);
     if (!ready) {
@@ -84,7 +86,17 @@ export default function HomeScreen() {
         handleSync();
       });
     }
-  };
+  }, [loadCategories]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (isMounted) {
+      checkInitialState();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [checkInitialState]);
 
   const renderCategory = ({ item }: { item: any }) => (
     <Pressable
@@ -142,6 +154,12 @@ export default function HomeScreen() {
             <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
               Explore the Pāli Canon
             </Text>
+            {isLoadingCategories && (
+              <ActivityIndicator 
+                color={colors.primary} 
+                style={{ marginTop: spacing.lg }} 
+              />
+            )}
           </View>
         }
         contentContainerStyle={styles.listContent}
