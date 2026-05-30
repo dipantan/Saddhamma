@@ -1,7 +1,7 @@
 import { getMenu, stripHtml } from "@/services/DataService";
 import { radius, spacing, useTheme } from "@/theme";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -23,14 +23,11 @@ export default function MenuScreen() {
     blurb: "",
   });
 
-  useEffect(() => {
-    loadMenu();
-  }, [id]);
-
-  const loadMenu = async () => {
+  const loadMenu = useCallback(async (isMounted: boolean) => {
     setLoading(true);
     try {
       const data = await getMenu(id);
+      if (!isMounted) return;
       if (data) {
         let menuItems: any[] = [];
         let appBarTitle = id.toUpperCase();
@@ -71,9 +68,23 @@ export default function MenuScreen() {
     } catch (error) {
       console.error(error);
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.resolve().then(() => {
+      if (isMounted) {
+        loadMenu(isMounted);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [loadMenu]);
 
   const renderItem = ({ item }: { item: any }) => {
     const isLeaf = item.node_type === "leaf" || item.type === "text";

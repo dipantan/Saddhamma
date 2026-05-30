@@ -15,16 +15,12 @@ import { Snackbar } from "react-native-snackbar";
 
 function GlobalProgressBar() {
   const [progress, setProgress] = useState(0);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(() => isIndexingInProgress());
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [widthAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    // Check initial state only once on mount
-    const isActive = isIndexingInProgress();
-    setVisible(isActive);
-
     const unsubscribe = addIndexListener((processed, total) => {
       const active = isIndexingInProgress();
       setVisible(active);

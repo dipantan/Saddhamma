@@ -7,7 +7,7 @@ import {
   stripHtml,
   toggleBookmark,
 } from "@/services/DataService";
-import { spacing, radius, useTheme } from "@/theme";
+import { radius, spacing, useTheme } from "@/theme";
 import {
   Button,
   Checkbox,
@@ -25,27 +25,26 @@ import {
   Trigger,
 } from "@expo/ui/jetpack-compose";
 import {
-  background,
   fillMaxWidth,
   height,
   padding,
-  paddingAll,
+  paddingAll
 } from "@expo/ui/jetpack-compose/modifiers";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   BackHandler,
   FlatList,
   Platform,
   Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Snackbar } from "react-native-snackbar";
 
 const SERIF_FONT = Platform.select({
   ios: "Georgia",
@@ -79,6 +78,7 @@ export default function ReaderScreen() {
   const insets = useSafeAreaInsets();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedComment, setSelectedComment] = useState<string | null>(null);
 
   // Reader Settings
@@ -89,7 +89,7 @@ export default function ReaderScreen() {
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
-  const resolvedRootLang = React.useMemo(() => {
+  const resolvedRootLang = useMemo(() => {
     if (data?.root_lang) return data.root_lang;
     const lowerUid = uid?.toLowerCase() || "";
     if (lowerUid.startsWith("t") || lowerUid.startsWith("da") || lowerUid.startsWith("ma") || lowerUid.startsWith("sa") || lowerUid.startsWith("ea")) {
@@ -98,35 +98,52 @@ export default function ReaderScreen() {
       return "san";
     }
     return "pli";
-  }, [data?.root_lang, uid]);
+  }, [data, uid]);
 
-  useEffect(() => {
-    initReader();
-  }, [uid]);
-
-  const initReader = async () => {
+  const initReader = useCallback(async (isMounted: boolean) => {
     setLoading(true);
+    setError(null);
     try {
       const saved = await loadSettings();
+      if (!isMounted) return;
       if (saved) {
-        if (saved.showPali !== undefined) setShowPali(saved.showPali);
-        if (saved.showSegments !== undefined)
-          setShowSegments(saved.showSegments);
-        if (saved.showComments !== undefined)
-          setShowComments(saved.showComments);
-        if (saved.fontSize !== undefined) setFontSize(saved.fontSize);
+        setShowPali(prev => saved.showPali !== undefined ? saved.showPali : prev);
+        setShowSegments(prev => saved.showSegments !== undefined ? saved.showSegments : prev);
+        setShowComments(prev => saved.showComments !== undefined ? saved.showComments : prev);
+        setFontSize(prev => saved.fontSize !== undefined ? saved.fontSize : prev);
       }
       const result = await getSuttaContent(uid);
-      setData(result);
-
-      const bookmarked = await checkBookmark(uid);
-      setIsBookmarked(bookmarked);
-    } catch (error) {
-      console.error(error);
+      if (!isMounted) return;
+      if (!result) {
+        setError("Sutta content could not be loaded. It might be missing or you may be offline.");
+      } else {
+        setData(result);
+        const bookmarked = await checkBookmark(uid);
+        setIsBookmarked(bookmarked);
+      }
+    } catch (err) {
+      console.error(err);
+      if (isMounted) {
+        setError("An unexpected error occurred while loading the sutta.");
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
-  };
+  }, [uid]);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.resolve().then(() => {
+      if (isMounted) {
+        initReader(isMounted);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [initReader]);
 
   useEffect(() => {
     if (!loading) {
@@ -204,25 +221,32 @@ export default function ReaderScreen() {
       });
 
       await Clipboard.setStringAsync(copyText.trim());
-      Alert.alert("Sutta Copied", "The entire sutta text has been copied to your clipboard.");
+      Snackbar.show({
+        text: "Sutta copied to clipboard",
+        duration: Snackbar.LENGTH_SHORT,
+      });
       setMenuExpanded(false);
     } catch (e) {
       console.error(e);
-      Alert.alert("Error", "Failed to copy sutta text.");
+      Snackbar.show({
+        text: "Failed to copy sutta text",
+        duration: Snackbar.LENGTH_SHORT,
+        backgroundColor: colors.error,
+      });
     }
   };
 
-  const hasTranslation = React.useMemo(() => {
+  const hasTranslation = useMemo(() => {
     if (!data || !data.translation_text) return false;
     return Object.keys(data.translation_text).length > 0;
   }, [data?.translation_text]);
 
-  const isLegacyTranslation = React.useMemo(() => {
+  const isLegacyTranslation = useMemo(() => {
     if (!data || !data.translation_text) return false;
     return Object.keys(data.translation_text).some(k => k.includes(":legacy"));
   }, [data?.translation_text]);
 
-  const sortedSegments = React.useMemo(() => {
+  const sortedSegments = useMemo(() => {
     if (!data) return [];
     return Array.from(
       new Set([
@@ -234,7 +258,7 @@ export default function ReaderScreen() {
     );
   }, [data?.root_text, data?.translation_text]);
 
-  const renderSegment = React.useCallback(
+  const renderSegment = useCallback(
     ({ item: segId }: { item: string }) => (
       <SegmentItem
         segId={segId}
@@ -254,7 +278,7 @@ export default function ReaderScreen() {
 
   if (loading) return <LoadingState message="Loading Dhamma…" />;
 
-  if (!data) {
+  if (error || !data) {
     return (
       <Host>
         <View
@@ -264,10 +288,21 @@ export default function ReaderScreen() {
             { backgroundColor: colors.background, paddingTop: insets.top },
           ]}
         >
-          <Text style={styles.largeEmoji}>📖</Text>
-          <Text style={[styles.centerText, { color: colors.textSecondary }]}>
-            Sutta not found.
+          <Text style={styles.largeEmoji}>{error ? "⚠️" : "📖"}</Text>
+          <Text style={[styles.centerText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
+            {error || "Sutta not found."}
           </Text>
+          {error && (
+            <Pressable 
+              style={({ pressed }) => [
+                styles.retryButton, 
+                { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }
+              ]}
+              onPress={() => initReader(true)}
+            >
+              <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Retry</Text>
+            </Pressable>
+          )}
         </View>
       </Host>
     );
@@ -307,6 +342,10 @@ export default function ReaderScreen() {
                           stripHtml(rootTitle),
                         );
                         setIsBookmarked(newState);
+                        Snackbar.show({
+                          text: newState ? "Sutta bookmarked" : "Bookmark removed",
+                          duration: Snackbar.LENGTH_SHORT,
+                        });
                       }}
                       style={styles.iconBtn}
                     >
@@ -524,13 +563,12 @@ export default function ReaderScreen() {
             modifiers={[
               paddingAll(24),
               fillMaxWidth(),
-              background(colors.surface),
             ]}
           >
             <NativeText
               color={colors.textPrimary}
               style={{ typography: "titleLarge" }}
-              modifiers={[padding(0, 8, 0, 8)]}
+              modifiers={[padding(0, 0, 16, 0)]}
             >
               Note
             </NativeText>
@@ -551,6 +589,19 @@ export default function ReaderScreen() {
   );
 }
 
+interface SegmentItemProps {
+  segId: string;
+  root?: string;
+  trans?: string;
+  comment?: string;
+  colors: any;
+  fontSize: number;
+  showPali: boolean;
+  showSegments: boolean;
+  showComments: boolean;
+  onCommentPress: (comment: string) => void;
+}
+
 const SegmentItem = React.memo(
   ({
     segId,
@@ -563,7 +614,7 @@ const SegmentItem = React.memo(
     showSegments,
     showComments,
     onCommentPress,
-  }: any) => {
+  }: SegmentItemProps) => {
     const isLegacy = segId.includes(":legacy:");
     let isHeader = false;
     let isCollection = false;
@@ -710,7 +761,7 @@ const SegmentItem = React.memo(
                     onPress={() => onCommentPress(comment)}
                     style={[
                       styles.commentAsterisk,
-                      { color: colors.primary, fontSize: fontSize * 0.85 },
+                      { color: colors.primary, fontSize: fontSize * 1.2 },
                     ]}
                   >
                     *
@@ -724,6 +775,8 @@ const SegmentItem = React.memo(
     );
   },
 );
+
+SegmentItem.displayName = "SegmentItem";
 
 const styles = StyleSheet.create({
   container: {
@@ -827,5 +880,20 @@ const styles = StyleSheet.create({
   },
   iconBtn: {
     padding: spacing.sm,
+  },
+  retryButton: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

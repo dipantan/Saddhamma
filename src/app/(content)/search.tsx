@@ -42,9 +42,11 @@ export default function SearchScreen() {
 
   useEffect(() => {
     let isMounted = true;
-    if (q && isMounted) {
-      performSearch(q);
-    }
+    Promise.resolve().then(() => {
+      if (q && isMounted) {
+        performSearch(q);
+      }
+    });
     return () => {
       isMounted = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);

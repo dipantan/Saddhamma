@@ -90,9 +90,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let isMounted = true;
-    if (isMounted) {
-      checkInitialState();
-    }
+    Promise.resolve().then(() => {
+      if (isMounted) {
+        checkInitialState();
+      }
+    });
     return () => {
       isMounted = false;
     };
