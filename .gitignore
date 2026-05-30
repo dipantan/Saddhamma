@@ -45,3 +45,4 @@ app-example
 .agents
 skills-lock.json
 llms-full.txt
+.vscode
