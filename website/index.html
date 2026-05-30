@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saddhamma - Offline Pāli Canon Reader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #B58105; /* Saffron/Ochre */
+            --bg: #FAFAFA;
+            --text: #2D2D2D;
+            --text-secondary: #666666;
+            --card: #FFFFFF;
+            --border: #EEEEEE;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #121212;
+                --text: #E0E0E0;
+                --text-secondary: #AAAAAA;
+                --card: #1E1E1E;
+                --border: #333333;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Noto Serif', serif;
+            font-weight: 700;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 80px 0 40px;
+            text-align: center;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            border-radius: 28px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 42px;
+            margin-bottom: 12px;
+            color: var(--primary);
+        }
+
+        .tagline {
+            font-size: 20px;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 40px;
+        }
+
+        .cta-group {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            font-size: 16px;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(181, 129, 5, 0.3);
+        }
+
+        .btn-secondary {
+            background-color: var(--card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--bg);
+            border-color: var(--primary);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 32px;
+            padding: 80px 0;
+        }
+
+        .feature-card {
+            background: var(--card);
+            padding: 32px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .feature-card h3 {
+            margin-bottom: 12px;
+            font-size: 20px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 40px 0;
+        }
+
+        footer {
+            padding: 60px 0 100px;
+            text-align: center;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+            margin: 0 12px;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .github-stats {
+            margin-top: 24px;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 600px) {
+            h1 { font-size: 32px; }
+            .tagline { font-size: 18px; }
+            .btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <img src="assets/icon.png" alt="Saddhamma Logo" class="logo">
+            <h1>Saddhamma</h1>
+            <p class="tagline">A high-performance, offline-first reader for the Pāli Canon. Carry the Buddha's wisdom in your pocket.</p>
+            
+            <div class="cta-group">
+                <a href="https://github.com/dipantan/Saddhamma/releases/latest/download/Saddhamma-v1.0.0.apk" class="btn btn-primary">
+                    Download APK (v1.0.0)
+                </a>
+                <a href="https://github.com/dipantan/Saddhamma" class="btn btn-secondary">
+                    View Source Code
+                </a>
+            </div>
+        </header>
+
+        <section class="features">
+            <div class="feature-card">
+                <span class="feature-icon">☸️</span>
+                <h3>Offline-First</h3>
+                <p>Download once, read anywhere. Perfect for retreats and areas with limited connectivity.</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🔍</span>
+                <h3>Fast Search</h3>
+                <p>Instant Full-Text Search across the entire Tipitaka using optimized SQLite indexing.</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">📖</span>
+                <h3>Modern Reader</h3>
+                <p>Clean typography, dark mode support, and side-by-side Pāli-English alignment.</p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <footer>
+            <p>&copy; 2026 Saddhamma Project. Built with ❤️ for the Dhamma.</p>
+            <div style="margin-top: 16px;">
+                <a href="privacy.html">Privacy Policy</a>
+                <a href="terms.html">Terms of Service</a>
+                <a href="https://github.com/dipantan/Saddhamma/issues">Report an Issue</a>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
