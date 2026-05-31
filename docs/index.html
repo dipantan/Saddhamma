@@ -3,10 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saddhamma - Offline Pāli Canon Reader</title>
+    
+    <!-- Primary Meta Tags -->
+    <title>Saddhamma - High-Performance Offline Pāli Canon Reader</title>
+    <meta name="title" content="Saddhamma - High-Performance Offline Pāli Canon Reader">
+    <meta name="description" content="A professional, minimal, and offline-first mobile reader for the Pāli Canon. Lightning-fast search, beautiful typography, and side-by-side translations.">
+    <meta name="keywords" content="Buddhism, Sutta, Pāli Canon, Tipitaka, Meditation, Dhamma, Buddha, Offline Reader, Theravada, React Native, Expo">
+    <meta name="author" content="Saddhamma Project">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://saddhamma.online/">
+    <meta property="og:title" content="Saddhamma - Offline Pāli Canon Reader">
+    <meta property="og:description" content="A professional, minimal, and offline-first mobile reader for the Pāli Canon. Lightning-fast search and beautiful typography.">
+    <meta property="og:image" content="https://saddhamma.online/assets/splash.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://saddhamma.online/">
+    <meta property="twitter:title" content="Saddhamma - Offline Pāli Canon Reader">
+    <meta property="twitter:description" content="A professional, minimal, and offline-first mobile reader for the Pāli Canon. Lightning-fast search and beautiful typography.">
+    <meta property="twitter:image" content="https://saddhamma.online/assets/splash.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="assets/icon.png">
+    <link rel="apple-touch-icon" href="assets/icon.png">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    
     <style>
         :root {
             --primary: #B58105; /* Saffron/Ochre */
@@ -47,7 +73,7 @@
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 0 24px;
         }
@@ -121,7 +147,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 32px;
-            padding: 80px 0;
+            padding: 60px 0;
         }
 
         .feature-card {
@@ -148,6 +174,47 @@
             font-size: 15px;
         }
 
+        /* Screenshot Gallery Styles */
+        .gallery-section {
+            padding: 60px 0;
+            text-align: center;
+        }
+
+        .gallery-title {
+            margin-bottom: 40px;
+            font-size: 28px;
+            color: var(--text);
+        }
+
+        .screenshot-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 20px 0;
+        }
+
+        .screenshot-wrapper {
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 4px solid var(--card);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+            aspect-ratio: 9 / 19.5; /* Mobile aspect ratio */
+            background-color: var(--card);
+        }
+
+        .screenshot-wrapper:hover {
+            transform: scale(1.03);
+        }
+
+        .screenshot-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
         .divider {
             height: 1px;
             background: var(--border);
@@ -171,15 +238,14 @@
             text-decoration: underline;
         }
 
-        .github-stats {
-            margin-top: 24px;
-            opacity: 0.8;
-        }
-
         @media (max-width: 600px) {
             h1 { font-size: 32px; }
             .tagline { font-size: 18px; }
             .btn { width: 100%; justify-content: center; }
+            .screenshot-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+            }
         }
     </style>
 </head>
@@ -215,6 +281,22 @@
                 <span class="feature-icon">📖</span>
                 <h3>Modern Reader</h3>
                 <p>Clean typography, dark mode support, and side-by-side Pāli-English alignment.</p>
+            </div>
+        </section>
+
+        <div class="divider"></div>
+
+        <section class="gallery-section">
+            <h2 class="gallery-title">Experience the App</h2>
+            <div class="screenshot-grid">
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/1.jpeg" alt="Screenshot 1"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/2.jpeg" alt="Screenshot 2"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/3.jpeg" alt="Screenshot 3"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/4.jpeg" alt="Screenshot 4"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/5.jpeg" alt="Screenshot 5"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/6.jpeg" alt="Screenshot 6"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/7.jpeg" alt="Screenshot 7"></div>
+                <div class="screenshot-wrapper"><img src="assets/screeenshots/8.jpeg" alt="Screenshot 8"></div>
             </div>
         </section>
 
