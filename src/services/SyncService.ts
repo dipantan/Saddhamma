@@ -1,8 +1,8 @@
-import { Paths, File as ExpoFile, Directory } from 'expo-file-system';
-import { unzip } from 'react-native-zip-archive';
+import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import { Snackbar } from 'react-native-snackbar';
+import { unzip } from 'react-native-zip-archive';
 // Use absolute path alias to resolve module discovery issues
-import { populateIndex, isDataReady } from '@/services/DataService';
+import { isDataReady, populateIndex } from '@/services/DataService';
 
 const RELEASE_BASE = "https://github.com/dipantan/suttacentral-api-server/releases/latest/download";
 const DATA_URL = `${RELEASE_BASE}/data.zip`;
@@ -14,7 +14,23 @@ const VERSION_PATH = `${DATA_DIR_URI}version.json`;
 
 export interface VersionInfo {
   commit: string;
-  timestamp: string;
+  timestamp?: string;
+  date?: string;
+  updated_at?: string;
+}
+
+export async function getLocalVersion(): Promise<VersionInfo | null> {
+  try {
+    const versionFile = new ExpoFile(VERSION_PATH);
+    if (await versionFile.exists) {
+      const content = await versionFile.text();
+      return JSON.parse(content);
+    }
+    return null;
+  } catch (error) {
+    console.error("Error reading local version:", error);
+    return null;
+  }
 }
 
 export async function checkForUpdates(

@@ -1,23 +1,27 @@
+import { SectionHeader } from "@/components";
+import { addIndexListener, buildFullTextIndex, isIndexingInProgress } from "@/services/DataService";
+import { radius, spacing, useTheme, type ThemeMode } from "@/theme";
+import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
-  Text,
+  Pressable,
   ScrollView,
   StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  Linking,
+  Text,
+  View
 } from "react-native";
-import { SectionHeader } from "@/components";
-import { useTheme, spacing, radius, type ThemeMode } from "@/theme";
-import { Ionicons } from "@expo/vector-icons";
-import { buildFullTextIndex, addIndexListener, isIndexingInProgress } from "@/services/DataService";
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
+  const router = useRouter();
   const [isIndexing, setIsIndexing] = useState(isIndexingInProgress());
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState(isIndexingInProgress() ? "Indexing…" : "Idle");
+
+  const appVersion = Constants.expoConfig?.version || "1.0.0";
+  const buildNumber = Constants.expoConfig?.android?.versionCode || 1;
 
   React.useEffect(() => {
     const removeListener = addIndexListener((processed, total) => {
@@ -145,18 +149,15 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         {renderSettingRow({
           icon: "information-circle",
-          label: "License & Source",
-          onPress: () => Linking.openURL("https://suttacentral.net/licensing"),
-        })}
-        {renderSettingRow({
-          icon: "code-working",
-          label: "App Version",
-          value: "1.2.0 (Build 56)",
-          onPress: () => {},
+          label: "About Saddhamma",
+          onPress: () => router.push("/(tabs)/(settings)/about"),
         })}
       </View>
 
       <View style={styles.footer}>
+        <Text style={[styles.versionText, { color: colors.textTertiary }]}>
+          Version {appVersion} (Build {buildNumber})
+        </Text>
         <Text style={[styles.footerText, { color: colors.textTertiary }]}>
           May all beings be happy and free.
         </Text>
@@ -238,5 +239,11 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 12,
     fontStyle: "italic",
+    marginTop: spacing.xs,
+  },
+  versionText: {
+    fontSize: 12,
+    fontWeight: "500",
+    letterSpacing: 0.5,
   },
 });
