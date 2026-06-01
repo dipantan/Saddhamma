@@ -90,6 +90,18 @@ export default function AboutScreen() {
         )}
 
         <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Contact Us</Text>
+          <Pressable 
+            onPress={() => Linking.openURL("mailto:dipantan755@gmail.com")}
+            style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+          >
+            <Text style={[styles.sectionText, { color: colors.textSecondary }]}>
+              For any queries, suggestions, or grievance redressal, please email us at <Text style={{ color: colors.primary, fontWeight: "600" }}>dipantan755@gmail.com</Text>
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>Dhamma Pipeline</Text>
           <View style={styles.pipelineContainer}>
             {renderPipelineStep("logo-github", "Upstream", "SuttaCentral bilara-data repository")}
