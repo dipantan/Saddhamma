@@ -6,6 +6,11 @@ import {
   saveSettings,
   stripHtml,
   toggleBookmark,
+  getUserNotes,
+  saveUserNote,
+  getUserHighlights,
+  toggleUserHighlight,
+  addReadingLog,
 } from "@/services/DataService";
 import { radius, spacing, useTheme } from "@/theme";
 import {
@@ -37,10 +42,12 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
   FlatList,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -51,6 +58,28 @@ const SERIF_FONT = Platform.select({
   android: "serif",
   default: "serif",
 });
+
+const isDuplicateText = (str1?: string, str2?: string): boolean => {
+  if (!str1 || !str2) return false;
+  // Normalize string by trimming, removing spaces, periods, brackets, parentheses,
+  // and converting all varieties of dashes to a standard hyphen.
+  const clean = (s: string) => {
+    return s.trim()
+      .toLowerCase()
+      .replace(/[\s.\[\]\(\)]/g, "")
+      .replace(/[\u2013\u2014-]/g, "-");
+  };
+  const s1 = clean(str1);
+  const s2 = clean(str2);
+  if (s1 === s2) return true;
+  
+  // Match range numbers (e.g. 1-10) or single numbers (e.g. 5)
+  const isNumericOrRange = (s: string) => /^\d+(-\d+)*$/.test(s);
+  if (isNumericOrRange(s1) && isNumericOrRange(s2)) {
+    return true;
+  }
+  return false;
+};
 
 const getLanguageName = (langCode: string): string => {
   if (!langCode) return "Root";
@@ -71,6 +100,31 @@ const getLanguageName = (langCode: string): string => {
   }
 };
 
+const formatAuthorName = (uid?: string): string => {
+  if (!uid) return "";
+  const code = uid.toLowerCase().trim();
+  switch (code) {
+    case "sujato":
+      return "Bhikkhu Sujato";
+    case "bodhi":
+      return "Bhikkhu Bodhi";
+    case "brahmali":
+      return "Bhikkhu Brahmali";
+    case "thanissaro":
+      return "Thanissaro Bhikkhu";
+    case "anandajoti":
+      return "Bhikkhu Ānandajoti";
+    case "soma":
+      return "Soma Thera";
+    case "nanamoli":
+      return "Bhikkhu Ñāṇamoli";
+    case "nyanaponika":
+      return "Nyanaponika Thera";
+    default:
+      return code.charAt(0).toUpperCase() + code.slice(1);
+  }
+};
+
 export default function ReaderScreen() {
   const { uid, title } = useLocalSearchParams<{ uid: string; title: string }>();
   const router = useRouter();
@@ -82,12 +136,22 @@ export default function ReaderScreen() {
   const [selectedComment, setSelectedComment] = useState<string | null>(null);
 
   // Reader Settings
-  const [showPali, setShowPali] = useState(true);
+  const [displayMode, setDisplayMode] = useState<"en" | "pli" | "bilingual">("bilingual");
   const [showSegments, setShowSegments] = useState(true);
   const [showComments, setShowComments] = useState(true);
   const [fontSize, setFontSize] = useState(19);
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
+
+  const showPali = displayMode === "pli" || displayMode === "bilingual";
+  const showTranslation = displayMode === "en" || displayMode === "bilingual";
+
+  // User Notes & Highlights
+  const [userNotes, setUserNotes] = useState<Record<string, string>>({});
+  const [userHighlights, setUserHighlights] = useState<string[]>([]);
+  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const [editingNoteSegmentId, setEditingNoteSegmentId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState("");
 
   const resolvedRootLang = useMemo(() => {
     if (data?.root_lang) return data.root_lang;
@@ -107,7 +171,11 @@ export default function ReaderScreen() {
       const saved = await loadSettings();
       if (!isMounted) return;
       if (saved) {
-        setShowPali(prev => saved.showPali !== undefined ? saved.showPali : prev);
+        if (saved.displayMode !== undefined) {
+          setDisplayMode(saved.displayMode);
+        } else if (saved.showPali !== undefined) {
+          setDisplayMode(saved.showPali ? "bilingual" : "en");
+        }
         setShowSegments(prev => saved.showSegments !== undefined ? saved.showSegments : prev);
         setShowComments(prev => saved.showComments !== undefined ? saved.showComments : prev);
         setFontSize(prev => saved.fontSize !== undefined ? saved.fontSize : prev);
@@ -120,6 +188,28 @@ export default function ReaderScreen() {
         setData(result);
         const bookmarked = await checkBookmark(uid);
         setIsBookmarked(bookmarked);
+
+        // Log to reading history
+        const getBestTitle = (textMap: any) => {
+          if (!textMap) return "";
+          const keys = Object.keys(textMap);
+          if (keys.length === 0) return "";
+          const suttaNameKey = keys.find((k) => k.endsWith(":0.2"));
+          const firstKey = keys[0];
+          return textMap[suttaNameKey || firstKey] || "";
+        };
+        const transTitle = getBestTitle(result?.translation_text) || title || uid;
+        addReadingLog(uid, stripHtml(transTitle)).catch(err => 
+          console.error("Error logging reading history:", err)
+        );
+
+        // Load user notes and highlights
+        const notes = await getUserNotes();
+        const highlights = await getUserHighlights();
+        if (isMounted) {
+          setUserNotes(notes);
+          setUserHighlights(highlights);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -131,7 +221,7 @@ export default function ReaderScreen() {
         setLoading(false);
       }
     }
-  }, [uid]);
+  }, [uid, title]);
 
   useEffect(() => {
     let isMounted = true;
@@ -147,9 +237,9 @@ export default function ReaderScreen() {
 
   useEffect(() => {
     if (!loading) {
-      saveSettings({ showPali, showSegments, showComments, fontSize });
+      saveSettings({ displayMode, showSegments, showComments, fontSize });
     }
-  }, [showPali, showSegments, showComments, fontSize]);
+  }, [displayMode, showSegments, showComments, fontSize]);
 
   useEffect(() => {
     const backAction = () => {
@@ -159,6 +249,14 @@ export default function ReaderScreen() {
       }
       if (selectedComment) {
         setSelectedComment(null);
+        return true;
+      }
+      if (activeSegmentId) {
+        setActiveSegmentId(null);
+        return true;
+      }
+      if (editingNoteSegmentId) {
+        setEditingNoteSegmentId(null);
         return true;
       }
       if (router.canGoBack()) {
@@ -268,12 +366,18 @@ export default function ReaderScreen() {
         colors={colors}
         fontSize={fontSize}
         showPali={showPali || !hasTranslation}
+        showTranslation={showTranslation}
         showSegments={showSegments}
         showComments={showComments}
         onCommentPress={setSelectedComment}
+        isHighlighted={userHighlights.includes(segId)}
+        isSuttaHighlighted={userHighlights.includes(uid)}
+        userNote={userNotes[segId]}
+        onSegmentPress={setActiveSegmentId}
+        authorUid={data?.author_uid}
       />
     ),
-    [data, colors, fontSize, showPali, showSegments, showComments, hasTranslation],
+    [data, colors, fontSize, showPali, showTranslation, showSegments, showComments, hasTranslation, userHighlights, userNotes, uid],
   );
 
   if (loading) return <LoadingState message="Loading Dhamma…" />;
@@ -381,11 +485,11 @@ export default function ReaderScreen() {
                     </Trigger>
 
                     <Items>
-                      <DropdownMenuItem onClick={() => setShowPali(!showPali)}>
+                      <DropdownMenuItem onClick={() => setDisplayMode(showPali ? "en" : "bilingual")}>
                         <DropdownMenuItem.LeadingIcon>
                           <Checkbox
                             value={showPali}
-                            onCheckedChange={setShowPali}
+                            onCheckedChange={(checked) => setDisplayMode(checked ? "bilingual" : "en")}
                             colors={{
                               checkedColor: colors.primary,
                               uncheckedColor: colors.outline,
@@ -471,6 +575,54 @@ export default function ReaderScreen() {
 
                       <HorizontalDivider thickness={1} color={colors.divider} />
 
+                      <DropdownMenuItem onClick={async () => {
+                        const highlighted = await toggleUserHighlight(uid);
+                        setUserHighlights(prev =>
+                          highlighted ? [...prev, uid] : prev.filter(h => h !== uid)
+                        );
+                        setMenuExpanded(false);
+                      }}>
+                        <DropdownMenuItem.LeadingIcon>
+                          <Ionicons
+                            name={userHighlights.includes(uid) ? "star" : "star-outline"}
+                            size={20}
+                            color={userHighlights.includes(uid) ? "#FFD700" : colors.textPrimary}
+                          />
+                        </DropdownMenuItem.LeadingIcon>
+                        <DropdownMenuItem.Text>
+                          <NativeText
+                            color={colors.textPrimary}
+                            style={{ typography: "bodyLarge" }}
+                          >
+                            {userHighlights.includes(uid) ? "Remove Highlight" : "Highlight Sutta"}
+                          </NativeText>
+                        </DropdownMenuItem.Text>
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem onClick={() => {
+                        setNoteText(userNotes[uid] || "");
+                        setEditingNoteSegmentId(uid);
+                        setMenuExpanded(false);
+                      }}>
+                        <DropdownMenuItem.LeadingIcon>
+                          <Ionicons
+                            name="journal-outline"
+                            size={20}
+                            color={colors.textPrimary}
+                          />
+                        </DropdownMenuItem.LeadingIcon>
+                        <DropdownMenuItem.Text>
+                          <NativeText
+                            color={colors.textPrimary}
+                            style={{ typography: "bodyLarge" }}
+                          >
+                            {userNotes[uid] ? "Edit Sutta Notes" : "Add Sutta Notes"}
+                          </NativeText>
+                        </DropdownMenuItem.Text>
+                      </DropdownMenuItem>
+
+                      <HorizontalDivider thickness={1} color={colors.divider} />
+
                       <Column modifiers={[paddingAll(12)]}>
                         <NativeText
                           color={colors.textSecondary}
@@ -535,21 +687,61 @@ export default function ReaderScreen() {
           maxToRenderPerBatch={10}
           windowSize={10}
           ListHeaderComponent={
-            !hasTranslation && data ? (
-              <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
-                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-                <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
-                  No English translation is available for this text. Showing {getLanguageName(resolvedRootLang)} root text.
-                </Text>
-              </View>
-            ) : isLegacyTranslation ? (
-              <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
-                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-                <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
-                  This is a legacy, non-aligned translation by {data?.author_uid ? data.author_uid.charAt(0).toUpperCase() + data.author_uid.slice(1) : "author"}. {getLanguageName(resolvedRootLang)} and English texts are shown independently.
-                </Text>
-              </View>
-            ) : null
+            <View>
+              {!hasTranslation && data && (
+                <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
+                  <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+                  <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
+                    No English translation is available for this text. Showing {getLanguageName(resolvedRootLang)} root text.
+                  </Text>
+                </View>
+              )}
+              {isLegacyTranslation && (
+                <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
+                  <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+                  <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
+                    This is a legacy, non-aligned translation by {data?.author_uid ? data.author_uid.charAt(0).toUpperCase() + data.author_uid.slice(1) : "author"}. {getLanguageName(resolvedRootLang)} and English texts are shown independently.
+                  </Text>
+                </View>
+              )}
+              {userNotes[uid] && (
+                <View style={[styles.suttaNoteCard, { backgroundColor: colors.primary + "0A", borderColor: colors.primary + "30" }]}>
+                  <View style={styles.suttaNoteHeader}>
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Ionicons name="journal-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                      <Text style={[styles.suttaNoteHeaderTitle, { color: colors.primary }]}>Sutta Reflection Note</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                      <Pressable 
+                        onPress={() => {
+                          setNoteText(userNotes[uid]);
+                          setEditingNoteSegmentId(uid);
+                        }}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                      >
+                        <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
+                      </Pressable>
+                      <Pressable 
+                        onPress={async () => {
+                          await saveUserNote(uid, "");
+                          setUserNotes(prev => {
+                            const updated = { ...prev };
+                            delete updated[uid];
+                            return updated;
+                          });
+                        }}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                      >
+                        <Ionicons name="trash-outline" size={16} color={colors.error} />
+                      </Pressable>
+                    </View>
+                  </View>
+                  <Text style={[styles.suttaNoteText, { color: colors.textPrimary, fontSize: Math.max(13, fontSize - 4) }]}>
+                    {userNotes[uid]}
+                  </Text>
+                </View>
+              )}
+            </View>
           }
         />
       </View>
@@ -585,6 +777,183 @@ export default function ReaderScreen() {
           </Column>
         </ModalBottomSheet>
       )}
+
+      {activeSegmentId && (
+        <ModalBottomSheet
+          onDismissRequest={() => setActiveSegmentId(null)}
+          showDragHandle={true}
+        >
+          <Column
+            modifiers={[
+              paddingAll(24),
+              fillMaxWidth(),
+            ]}
+          >
+            <NativeText
+              color={colors.textPrimary}
+              style={{ typography: "titleLarge" }}
+              modifiers={[padding(0, 0, 16, 0)]}
+            >
+              Segment Action
+            </NativeText>
+            
+            <Row
+              horizontalArrangement={{ spacedBy: 12 }}
+              modifiers={[fillMaxWidth(), padding(0, 0, 0, 16)]}
+            >
+              <Button
+                colors={{ containerColor: colors.primary }}
+                onClick={async () => {
+                  const highlighted = await toggleUserHighlight(activeSegmentId);
+                  setUserHighlights(prev =>
+                    highlighted ? [...prev, activeSegmentId] : prev.filter(h => h !== activeSegmentId)
+                  );
+                  setActiveSegmentId(null);
+                }}
+                modifiers={[fillMaxWidth().weight(1)]}
+              >
+                <NativeText
+                  color={colors.surface}
+                  style={{ typography: "labelLarge" }}
+                >
+                  {userHighlights.includes(activeSegmentId) ? "Unhighlight" : "Highlight"}
+                </NativeText>
+              </Button>
+
+              <Button
+                colors={{ containerColor: colors.primary }}
+                onClick={() => {
+                  setNoteText(userNotes[activeSegmentId] || "");
+                  setEditingNoteSegmentId(activeSegmentId);
+                  setActiveSegmentId(null);
+                }}
+                modifiers={[fillMaxWidth().weight(1)]}
+              >
+                <NativeText
+                  color={colors.surface}
+                  style={{ typography: "labelLarge" }}
+                >
+                  {userNotes[activeSegmentId] ? "Edit Note" : "Add Note"}
+                </NativeText>
+              </Button>
+            </Row>
+
+            <Row
+              horizontalArrangement={{ spacedBy: 12 }}
+              modifiers={[fillMaxWidth()]}
+            >
+              <Button
+                colors={{ containerColor: colors.surfaceVariant }}
+                onClick={async () => {
+                  try {
+                    const rootLine = data?.root_text?.[activeSegmentId] || "";
+                    const transLine = data?.translation_text?.[activeSegmentId] || "";
+                    let copyVal = "";
+                    if (rootLine) copyVal += `${stripHtml(rootLine)}\n`;
+                    if (transLine) copyVal += `${stripHtml(transLine)}`;
+                    await Clipboard.setStringAsync(copyVal.trim());
+                    Snackbar.show({
+                      text: "Segment copied to clipboard",
+                      duration: Snackbar.LENGTH_SHORT,
+                    });
+                  } catch (e) {
+                    console.error(e);
+                  }
+                  setActiveSegmentId(null);
+                }}
+                modifiers={[fillMaxWidth().weight(1)]}
+              >
+                <NativeText
+                  color={colors.textPrimary}
+                  style={{ typography: "labelLarge" }}
+                >
+                  Copy Text
+                </NativeText>
+              </Button>
+
+              {userNotes[activeSegmentId] && (
+                <Button
+                  colors={{ containerColor: "#FF3B30" }}
+                  onClick={async () => {
+                    await saveUserNote(activeSegmentId, "");
+                    setUserNotes(prev => {
+                      const updated = { ...prev };
+                      delete updated[activeSegmentId];
+                      return updated;
+                    });
+                    setActiveSegmentId(null);
+                  }}
+                  modifiers={[fillMaxWidth().weight(1)]}
+                >
+                  <NativeText
+                    color={colors.surface}
+                    style={{ typography: "labelLarge" }}
+                  >
+                    Delete Note
+                  </NativeText>
+                </Button>
+              )}
+            </Row>
+          </Column>
+        </ModalBottomSheet>
+      )}
+
+      {editingNoteSegmentId && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setEditingNoteSegmentId(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                {userNotes[editingNoteSegmentId] ? "Edit Note" : "Add Note"}
+              </Text>
+              <TextInput
+                style={[styles.noteInput, {
+                  color: colors.textPrimary,
+                  borderColor: colors.divider,
+                  backgroundColor: colors.background
+                }]}
+                multiline
+                numberOfLines={4}
+                value={noteText}
+                onChangeText={setNoteText}
+                placeholder="Write your personal Dhamma note here..."
+                placeholderTextColor={colors.textTertiary}
+                autoFocus
+              />
+              <View style={styles.modalButtons}>
+                <Pressable
+                  style={[styles.button, { backgroundColor: colors.surfaceVariant }]}
+                  onPress={() => setEditingNoteSegmentId(null)}
+                >
+                  <Text style={[styles.buttonText, { color: colors.textSecondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.button, { backgroundColor: colors.primary }]}
+                  onPress={async () => {
+                    await saveUserNote(editingNoteSegmentId, noteText);
+                    setUserNotes(prev => {
+                      const updated = { ...prev };
+                      if (noteText.trim()) {
+                        updated[editingNoteSegmentId] = noteText;
+                      } else {
+                        delete updated[editingNoteSegmentId];
+                      }
+                      return updated;
+                    });
+                    setEditingNoteSegmentId(null);
+                  }}
+                >
+                  <Text style={[styles.buttonText, { color: colors.textInverse }]}>Save</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </Host>
   );
 }
@@ -597,9 +966,15 @@ interface SegmentItemProps {
   colors: any;
   fontSize: number;
   showPali: boolean;
+  showTranslation: boolean;
   showSegments: boolean;
   showComments: boolean;
   onCommentPress: (comment: string) => void;
+  isHighlighted: boolean;
+  isSuttaHighlighted: boolean;
+  userNote?: string;
+  onSegmentPress: (segId: string) => void;
+  authorUid?: string;
 }
 
 const SegmentItem = React.memo(
@@ -611,9 +986,15 @@ const SegmentItem = React.memo(
     colors,
     fontSize,
     showPali,
+    showTranslation,
     showSegments,
     showComments,
     onCommentPress,
+    isHighlighted,
+    isSuttaHighlighted,
+    userNote,
+    onSegmentPress,
+    authorUid,
   }: SegmentItemProps) => {
     const isLegacy = segId.includes(":legacy:");
     let isHeader = false;
@@ -645,13 +1026,35 @@ const SegmentItem = React.memo(
       }
     }
 
-    if (!trans && (!showPali || !root)) return null;
+    const displayTrans = showTranslation ? trans : undefined;
+
+    if (!displayTrans && (!showPali || !root)) return null;
 
     if (isHeader) {
+      const suttaHighlightedBgColor = colors.background === "#121212" ? "#302202" : "#FFF8EB";
+      const suttaHighlightedBorderColor = colors.primary + "60";
       return (
-        <View style={styles.headerSegment}>
+        <View 
+          style={[
+            styles.headerSegment,
+            isTitle && isSuttaHighlighted && {
+              backgroundColor: suttaHighlightedBgColor,
+              borderColor: suttaHighlightedBorderColor,
+              borderWidth: 1,
+              borderRadius: radius.lg,
+              padding: spacing.md,
+              marginHorizontal: -spacing.sm,
+            }
+          ]}
+        >
           <Text selectable style={{ textAlign: "center", width: "100%" }}>
-            {isCollection && trans && (
+            {isTitle && isSuttaHighlighted && (
+              <Text style={{ textAlign: "center" }}>
+                <Ionicons name="star" size={18} color="#FFD700" />
+                {"  "}
+              </Text>
+            )}
+            {isCollection && displayTrans && (
               <Text
                 style={[
                   styles.collectionTitle,
@@ -661,11 +1064,11 @@ const SegmentItem = React.memo(
                   },
                 ]}
               >
-                {trans.toUpperCase()}
+                {displayTrans.toUpperCase()}
                 {"\n"}
               </Text>
             )}
-            {isTitle && trans && (
+            {isTitle && displayTrans && (
               <Text
                 style={[
                   styles.mainTitle,
@@ -676,7 +1079,7 @@ const SegmentItem = React.memo(
                   },
                 ]}
               >
-                {trans}
+                {displayTrans}
                 {showPali && root ? "\n" : ""}
               </Text>
             )}
@@ -693,10 +1096,10 @@ const SegmentItem = React.memo(
                 ]}
               >
                 {root}
-                {isSubtitle && trans ? "\n" : ""}
+                {isSubtitle && displayTrans ? "\n" : ""}
               </Text>
             )}
-            {isSubtitle && trans && (
+            {isSubtitle && displayTrans && (
               <Text
                 style={[
                   styles.subtitle,
@@ -707,7 +1110,21 @@ const SegmentItem = React.memo(
                   },
                 ]}
               >
-                {trans}
+                {displayTrans}
+              </Text>
+            )}
+            {isTitle && authorUid && (
+              <Text
+                style={[
+                  styles.translatorText,
+                  {
+                    color: colors.textSecondary,
+                    fontSize: Math.max(12, fontSize - 4),
+                  },
+                ]}
+              >
+                {"\n"}
+                {`Translation by ${formatAuthorName(authorUid)}`}
               </Text>
             )}
           </Text>
@@ -715,8 +1132,19 @@ const SegmentItem = React.memo(
       );
     }
 
+    const isDuplicate = isDuplicateText(root, displayTrans);
+    const highlightBgColor = colors.background === "#121212" ? "#382705" : "#FFF7E6";
+
     return (
-      <View style={styles.bodySegment}>
+      <Pressable
+        onPress={() => onSegmentPress(segId)}
+        style={({ pressed }) => [
+          styles.bodySegment,
+          {
+            backgroundColor: isHighlighted ? highlightBgColor : (pressed ? colors.surfaceVariant : "transparent"),
+          }
+        ]}
+      >
         {showSegments && (
           <View style={styles.segmentLeft}>
             <Text
@@ -727,8 +1155,8 @@ const SegmentItem = React.memo(
           </View>
         )}
         <View style={styles.segmentContent}>
-          <Text selectable style={{ width: "100%" }}>
-            {showPali && root && (
+          <Text selectable={false} style={{ width: "100%" }}>
+            {showPali && root && !isDuplicate && (
               <Text
                 style={[
                   styles.bodyText,
@@ -741,10 +1169,10 @@ const SegmentItem = React.memo(
                 ]}
               >
                 {root}
-                {trans ? "\n" : ""}
+                {displayTrans ? "\n" : ""}
               </Text>
             )}
-            {trans && (
+            {displayTrans && (
               <Text
                 style={[
                   styles.bodyText,
@@ -758,7 +1186,10 @@ const SegmentItem = React.memo(
                 {trans}
                 {showComments && comment && (
                   <Text
-                    onPress={() => onCommentPress(comment)}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      onCommentPress(comment);
+                    }}
                     style={[
                       styles.commentAsterisk,
                       { color: colors.primary, fontSize: fontSize * 1.2 },
@@ -770,8 +1201,20 @@ const SegmentItem = React.memo(
               </Text>
             )}
           </Text>
+
+          {userNote && (
+            <View style={[styles.userNoteContainer, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30" }]}>
+              <View style={styles.userNoteHeader}>
+                <Ionicons name="create-outline" size={14} color={colors.primary} style={{ marginRight: 6 }} />
+                <Text style={[styles.userNoteHeaderText, { color: colors.primary }]}>My Note</Text>
+              </View>
+              <Text style={[styles.userNoteText, { color: colors.textPrimary, fontSize: Math.max(12, fontSize - 2) }]}>
+                {userNote}
+              </Text>
+            </View>
+          )}
         </View>
-      </View>
+      </Pressable>
     );
   },
 );
@@ -851,6 +1294,9 @@ const styles = StyleSheet.create({
   bodySegment: {
     flexDirection: "row",
     paddingVertical: spacing.md,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    marginHorizontal: -spacing.sm,
   },
   segmentLeft: {
     width: 44,
@@ -896,4 +1342,95 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  userNoteContainer: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  userNoteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  userNoteHeaderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  userNoteText: {
+    lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  modalContent: {
+    width: "100%",
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: spacing.md,
+  },
+  noteInput: {
+    minHeight: 100,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    textAlignVertical: "top",
+    fontSize: 15,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buttonText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  translatorText: {
+    fontFamily: SERIF_FONT,
+    fontStyle: "italic",
+    opacity: 0.8,
+    textAlign: "center",
+  },
+  suttaNoteCard: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginVertical: spacing.md,
+  },
+  suttaNoteHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  suttaNoteHeaderTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  suttaNoteText: {
+    lineHeight: 19,
+    fontStyle: "italic",
+  },
 });
+

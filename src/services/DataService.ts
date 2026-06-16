@@ -6,6 +6,34 @@ const DATA_DIR = `${Paths.document.uri}sutta_data/`;
 const INDEX_PATH = `${DATA_DIR}sutta_index.json`;
 const SETTINGS_PATH = `${Paths.document.uri}reader_settings.json`;
 const BOOKMARKS_PATH = `${Paths.document.uri}bookmarks.json`;
+const NOTES_PATH = `${Paths.document.uri}user_notes.json`;
+const HIGHLIGHTS_PATH = `${Paths.document.uri}user_highlights.json`;
+const MEDITATION_LOGS_PATH = `${Paths.document.uri}meditation_logs.json`;
+const GRADUAL_TRAINING_PATH = `${Paths.document.uri}gradual_training.json`;
+const READING_LOGS_PATH = `${Paths.document.uri}reading_history.json`;
+
+export interface MeditationLog {
+  id: string;
+  timestamp: number;
+  durationMinutes: number;
+  notes?: string;
+}
+
+export interface GradualTrainingCheckIn {
+  date: string; // YYYY-MM-DD
+  senseRestraint: boolean;
+  moderationEating: boolean;
+  wakefulness: boolean;
+  mindfulnessClearComprehension: boolean;
+  preceptsObserved: boolean;
+  notes?: string;
+}
+
+export interface ReadingLog {
+  uid: string;
+  title: string;
+  timestamp: number;
+}
 
 export interface Bookmark {
   uid: string;
@@ -1364,3 +1392,269 @@ export async function getRootCategories(): Promise<any[]> {
     return [];
   }
 }
+
+export async function getUserNotes(): Promise<Record<string, string>> {
+  try {
+    const file = new ExpoFile(NOTES_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    return {};
+  } catch (error) {
+    console.error("Error loading user notes:", error);
+    return {};
+  }
+}
+
+export async function saveUserNote(uid: string, noteText: string): Promise<void> {
+  try {
+    const notes = await getUserNotes();
+    if (noteText.trim()) {
+      notes[uid] = noteText;
+    } else {
+      delete notes[uid];
+    }
+    const file = new ExpoFile(NOTES_PATH);
+    await file.write(JSON.stringify(notes));
+  } catch (error) {
+    console.error("Error saving user note:", error);
+  }
+}
+
+export async function getUserHighlights(): Promise<string[]> {
+  try {
+    const file = new ExpoFile(HIGHLIGHTS_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    return [];
+  } catch (error) {
+    console.error("Error loading user highlights:", error);
+    return [];
+  }
+}
+
+export async function toggleUserHighlight(uid: string): Promise<boolean> {
+  try {
+    const highlights = await getUserHighlights();
+    const idx = highlights.indexOf(uid);
+    let highlighted = false;
+    if (idx >= 0) {
+      highlights.splice(idx, 1);
+    } else {
+      highlights.push(uid);
+      highlighted = true;
+    }
+    const file = new ExpoFile(HIGHLIGHTS_PATH);
+    await file.write(JSON.stringify(highlights));
+    return highlighted;
+  } catch (error) {
+    console.error("Error toggling user highlight:", error);
+    return false;
+  }
+}
+
+export async function getMeditationLogs(): Promise<MeditationLog[]> {
+  try {
+    const file = new ExpoFile(MEDITATION_LOGS_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    return [];
+  } catch (error) {
+    console.error("Error loading meditation logs:", error);
+    return [];
+  }
+}
+
+export async function addMeditationLog(durationMinutes: number, notes?: string): Promise<void> {
+  try {
+    const logs = await getMeditationLogs();
+    const newLog: MeditationLog = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp: Date.now(),
+      durationMinutes,
+      notes,
+    };
+    logs.unshift(newLog);
+    const file = new ExpoFile(MEDITATION_LOGS_PATH);
+    await file.write(JSON.stringify(logs));
+  } catch (error) {
+    console.error("Error saving meditation log:", error);
+  }
+}
+
+export async function deleteMeditationLog(id: string): Promise<void> {
+  try {
+    const logs = await getMeditationLogs();
+    const updated = logs.filter(l => l.id !== id);
+    const file = new ExpoFile(MEDITATION_LOGS_PATH);
+    await file.write(JSON.stringify(updated));
+  } catch (error) {
+    console.error("Error deleting meditation log:", error);
+  }
+}
+
+export async function getGradualTrainingLogs(): Promise<Record<string, GradualTrainingCheckIn>> {
+  try {
+    const file = new ExpoFile(GRADUAL_TRAINING_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    return {};
+  } catch (error) {
+    console.error("Error loading gradual training logs:", error);
+    return {};
+  }
+}
+
+export async function saveGradualTrainingLog(date: string, checkIn: GradualTrainingCheckIn): Promise<void> {
+  try {
+    const logs = await getGradualTrainingLogs();
+    logs[date] = checkIn;
+    const file = new ExpoFile(GRADUAL_TRAINING_PATH);
+    await file.write(JSON.stringify(logs));
+  } catch (error) {
+    console.error("Error saving gradual training log:", error);
+  }
+}
+
+export async function getReadingLogs(): Promise<ReadingLog[]> {
+  try {
+    const file = new ExpoFile(READING_LOGS_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    return [];
+  } catch (error) {
+    console.error("Error loading reading logs:", error);
+    return [];
+  }
+}
+
+export async function addReadingLog(uid: string, title: string): Promise<void> {
+  try {
+    const logs = await getReadingLogs();
+    const now = Date.now();
+    const duplicate = logs.find(l => l.uid === uid && now - l.timestamp < 5 * 60 * 1000);
+    if (duplicate) return;
+
+    const newLog: ReadingLog = {
+      uid,
+      title,
+      timestamp: now,
+    };
+    logs.unshift(newLog);
+    if (logs.length > 100) {
+      logs.splice(100);
+    }
+    const file = new ExpoFile(READING_LOGS_PATH);
+    await file.write(JSON.stringify(logs));
+  } catch (error) {
+    console.error("Error saving reading log:", error);
+  }
+}
+
+export async function clearReadingLogs(): Promise<void> {
+  try {
+    const file = new ExpoFile(READING_LOGS_PATH);
+    await file.write(JSON.stringify([]));
+  } catch (error) {
+    console.error("Error clearing reading logs:", error);
+  }
+}
+
+export async function deleteReadingLog(uid: string, timestamp: number): Promise<void> {
+  try {
+    const logs = await getReadingLogs();
+    const updated = logs.filter(l => !(l.uid === uid && l.timestamp === timestamp));
+    const file = new ExpoFile(READING_LOGS_PATH);
+    await file.write(JSON.stringify(updated));
+  } catch (error) {
+    console.error("Error deleting reading log:", error);
+  }
+}
+
+export async function getDailySutta(): Promise<{ uid: string; title: string; acronym?: string } | null> {
+  try {
+    const database = await getDb();
+    
+    // Filter suttas to include only Sutta Pitaka, excluding Vinaya (pli-tv-) and Abhidhamma (ds, vb, dt, pp, kv, ya, patthana)
+    const sqlFilter = `
+      uid NOT LIKE 'pli-tv-%'
+      AND uid NOT LIKE 'ds%'
+      AND uid NOT LIKE 'vb%'
+      AND uid NOT LIKE 'dt%'
+      AND uid NOT LIKE 'pp%'
+      AND uid NOT LIKE 'kv%'
+      AND uid NOT LIKE 'ya%'
+      AND uid NOT LIKE 'patthana%'
+    `;
+
+    const countResult = await database.getFirstAsync<{ count: number }>(
+      `SELECT count(*) as count FROM sutta_index WHERE ${sqlFilter}`
+    );
+    const count = countResult?.count || 0;
+    if (count === 0) return null;
+
+    // Daily seed YYYYMMDD
+    const today = new Date();
+    const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+
+    // Try up to 20 suttas to find one with an English translation
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const offset = (seed + attempt) % count;
+      const row = await database.getFirstAsync<{ uid: string; title: string; data: string }>(
+        `SELECT uid, title, data FROM sutta_index WHERE ${sqlFilter} LIMIT 1 OFFSET ?`,
+        [offset]
+      );
+      if (row) {
+        try {
+          const parsed = JSON.parse(row.data);
+          // Only pick if it has an English translation (translation_text has segments)
+          if (parsed.translation_text && Object.keys(parsed.translation_text).length > 0) {
+            return {
+              uid: row.uid,
+              title: row.title,
+              acronym: parsed.acronym || row.uid.toUpperCase(),
+            };
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Fallback: just return the first row from seed
+    const fallbackOffset = seed % count;
+    const fallbackRow = await database.getFirstAsync<{ uid: string; title: string; data: string }>(
+      `SELECT uid, title, data FROM sutta_index WHERE ${sqlFilter} LIMIT 1 OFFSET ?`,
+      [fallbackOffset]
+    );
+    if (fallbackRow) {
+      try {
+        const parsed = JSON.parse(fallbackRow.data);
+        return {
+          uid: fallbackRow.uid,
+          title: fallbackRow.title,
+          acronym: parsed.acronym || fallbackRow.uid.toUpperCase(),
+        };
+      } catch (e) {
+        return {
+          uid: fallbackRow.uid,
+          title: fallbackRow.title,
+        };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting daily sutta:", error);
+    return null;
+  }
+}
+
+
+

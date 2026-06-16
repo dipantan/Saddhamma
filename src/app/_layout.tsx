@@ -5,13 +5,24 @@ import {
   isIndexingInProgress,
 } from "@/services/DataService";
 import { ThemeProvider, useTheme } from "@/theme";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
+import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Snackbar } from "react-native-snackbar";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 function GlobalProgressBar() {
   const [progress, setProgress] = useState(0);
@@ -65,8 +76,17 @@ function GlobalProgressBar() {
 
 function RootNavigator() {
   const { colors, isDark } = useTheme();
+  const router = useRouter();
   
   useEffect(() => {
+    // Handle Notification Tap Deep Linking
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const url = response.notification.request.content.data?.url;
+      if (url) {
+        router.push(url as any);
+      }
+    });
+
     // Handle OTA Updates
     async function onFetchUpdateAsync() {
       try {
@@ -95,7 +115,13 @@ function RootNavigator() {
     if (!__DEV__) {
       onFetchUpdateAsync();
     }
+    
+    return () => {
+      responseSubscription.remove();
+    };
+  }, [router]);
 
+  useEffect(() => {
     const startBackgroundTasks = async () => {
       try {
         // Wait a bit for the app to settle
@@ -136,6 +162,22 @@ function RootNavigator() {
             presentation: "modal",
             headerShown: true,
             title: "Search",
+          }}
+        />
+        <Stack.Screen
+          name="(content)/timer"
+          options={{
+            presentation: "modal",
+            headerShown: true,
+            title: "Meditation Timer",
+          }}
+        />
+        <Stack.Screen
+          name="(content)/logs"
+          options={{
+            presentation: "modal",
+            headerShown: true,
+            title: "Practice Logs",
           }}
         />
         <Stack.Screen

@@ -62,6 +62,14 @@ export default function MenuScreen() {
           blurb = data.blurb || "";
         }
 
+        // Sort items naturally if UIDs contain numbers (e.g. mn1, mn2, an1, an2...)
+        const hasNumericUids = menuItems.some(item => item.uid && /\d/.test(item.uid));
+        if (hasNumericUids) {
+          menuItems.sort((a, b) =>
+            a.uid.localeCompare(b.uid, undefined, { numeric: true, sensitivity: "base" })
+          );
+        }
+
         setItems(menuItems);
         setHeaderInfo({ appBarTitle, displayTitle, blurb });
       }

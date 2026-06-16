@@ -1,9 +1,10 @@
-import { getRootCategories, isDataReady } from "@/services/DataService";
+import { getRootCategories, isDataReady, getDailySutta } from "@/services/DataService";
 import { checkForUpdates, syncData } from "@/services/SyncService";
 import { useTheme } from "@/theme/ThemeContext";
 import { radius, spacing } from "@/theme/tokens";
 import { Stack, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
   FlatList,
@@ -12,6 +13,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Platform,
 } from "react-native";
 const CATEGORY_EMOJIS: Record<string, string> = {
   sutta: "☸️",
@@ -33,12 +35,15 @@ export default function HomeScreen() {
   const [categories, setCategories] = useState<any[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  const [dailySutta, setDailySutta] = useState<{ uid: string; title: string; acronym?: string } | null>(null);
 
   const loadCategories = useCallback(async () => {
     setIsLoadingCategories(true);
     try {
       const rootCats = await getRootCategories();
       setCategories(rootCats);
+      const ds = await getDailySutta();
+      setDailySutta(ds);
     } finally {
       setIsLoadingCategories(false);
     }
@@ -149,19 +154,104 @@ export default function HomeScreen() {
         renderItem={renderCategory}
         keyExtractor={(item) => item.uid}
         ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>
-              The Piṭakas
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-              Explore the Pāli Canon
-            </Text>
-            {isLoadingCategories && (
-              <ActivityIndicator 
-                color={colors.primary} 
-                style={{ marginTop: spacing.lg }} 
-              />
+          <View>
+            <View style={styles.header}>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>
+                The Piṭakas
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+                Explore the Pāli Canon
+              </Text>
+              {isLoadingCategories && (
+                <ActivityIndicator 
+                  color={colors.primary} 
+                  style={{ marginTop: spacing.lg }} 
+                />
+              )}
+            </View>
+
+            {/* Sutta of the Day Card */}
+            {dailySutta && (
+              <View style={[styles.dailyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <View style={styles.dailyHeader}>
+                  <Ionicons name="bookmark-outline" size={18} color={colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.dailyHeaderLabel, { color: colors.primary }]}>Sutta of the Day</Text>
+                </View>
+                <Text style={[styles.dailyTitle, { color: colors.textPrimary }]}>
+                  {dailySutta.title}
+                </Text>
+                <View style={styles.dailyFooter}>
+                  <View style={[styles.uidBadge, { backgroundColor: colors.surfaceVariant }]}>
+                    <Text style={[styles.uidBadgeText, { color: colors.textSecondary }]}>
+                      {dailySutta.acronym || dailySutta.uid.toUpperCase()}
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.readNowBtn,
+                      { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 },
+                    ]}
+                    onPress={() => router.push({
+                      pathname: "/reader/[uid]",
+                      params: {
+                        uid: dailySutta.uid,
+                        title: dailySutta.title,
+                      },
+                    } as any)}
+                  >
+                    <Text style={[styles.readNowBtnText, { color: colors.textInverse }]}>Read Now</Text>
+                    <Ionicons name="arrow-forward" size={14} color={colors.textInverse} style={{ marginLeft: 4 }} />
+                  </Pressable>
+                </View>
+              </View>
             )}
+
+            {/* Practice Companion section */}
+            <View style={styles.companionRow}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.companionCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.cardBorder,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+                onPress={() => router.push("/(content)/timer" as any)}
+              >
+                <View style={[styles.companionIconBg, { backgroundColor: colors.primary + "15" }]}>
+                  <Ionicons name="sunny-outline" size={20} color={colors.primary} />
+                </View>
+                <Text style={[styles.companionTitle, { color: colors.textPrimary }]}>
+                  Meditation
+                </Text>
+                <Text style={[styles.companionSub, { color: colors.textSecondary }]}>
+                  Timer & Breathing
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.companionCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.cardBorder,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+                onPress={() => router.push("/(content)/logs" as any)}
+              >
+                <View style={[styles.companionIconBg, { backgroundColor: colors.accent + "15" }]}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.accent} />
+                </View>
+                <Text style={[styles.companionTitle, { color: colors.textPrimary }]}>
+                  Practice Logs
+                </Text>
+                <Text style={[styles.companionSub, { color: colors.textSecondary }]}>
+                  Stats & Daily Check-in
+                </Text>
+              </Pressable>
+            </View>
           </View>
         }
         contentContainerStyle={styles.listContent}
@@ -338,6 +428,86 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  companionRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  companionCard: {
+    flex: 1,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    alignItems: "flex-start",
+  },
+  companionIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.sm,
+  },
+  companionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  companionSub: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 14,
+  },
+  dailyCard: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+  },
+  dailyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  dailyHeaderLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.0,
+  },
+  dailyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    fontFamily: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    lineHeight: 24,
+    marginBottom: spacing.md,
+  },
+  dailyFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  uidBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  uidBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  readNowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+  },
+  readNowBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
 });
 

@@ -85,6 +85,11 @@ export default function AboutScreen() {
         )}
 
         {renderSection(
+          "Privacy & Offline Verification",
+          "Saddhamma is built with privacy and offline capability at its core. There is no telemetry, no tracking, and no collection of personal information. All your reading history, settings, search logs, and bookmarks remain entirely on your device in local SQLite databases and configurations. Network activity is limited exclusively to downloading Sutta updates from GitHub Releases when requested."
+        )}
+
+        {renderSection(
           "Open Source",
           "This project is entirely open-source and licensed under GPL-3.0. We believe in the free distribution of the Dhamma and the software that carries it."
         )}
@@ -129,11 +134,17 @@ export default function AboutScreen() {
 
         <View style={styles.buttonGroup}>
           {renderButton("globe-outline", "Official Website", "https://saddhamma.online")}
+          {renderButton("book", "SuttaCentral", "https://suttacentral.net")}
         </View>
 
         <View style={styles.buttonGroup}>
           {renderButton("logo-github", "View Source Code", "https://github.com/dipantan/Saddhamma")}
-          {renderButton("book", "SuttaCentral", "https://suttacentral.net")}
+          {renderButton("shield-checkmark-outline", "Privacy Policy", "https://saddhamma.online/privacy.html")}
+        </View>
+
+        <View style={styles.buttonGroup}>
+          {renderButton("bug-outline", "Report an Issue", "https://github.com/dipantan/Saddhamma/issues")}
+          {renderButton("heart-outline", "Support the Project", "https://saddhamma.online/support")}
         </View>
 
         {renderSection(

@@ -1,17 +1,29 @@
 import { SectionHeader } from "@/components";
-import { addIndexListener, buildFullTextIndex, isIndexingInProgress } from "@/services/DataService";
+import { 
+  addIndexListener, 
+  buildFullTextIndex, 
+  isIndexingInProgress,
+  loadSettings,
+  saveSettings,
+  getDailySutta,
+} from "@/services/DataService";
 import { radius, spacing, useTheme, type ThemeMode } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
+  Alert,
+  Switch,
+  Modal,
 } from "react-native";
+import * as Notifications from "expo-notifications";
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
@@ -20,8 +32,168 @@ export default function SettingsScreen() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState(isIndexingInProgress() ? "Indexing…" : "Idle");
 
+  // Reader Preferences States
+  const [displayMode, setDisplayMode] = useState<"en" | "pli" | "bilingual">("bilingual");
+  const [showSegments, setShowSegments] = useState(true);
+  const [showComments, setShowComments] = useState(true);
+  const [fontSize, setFontSize] = useState(19);
+
+  // Reminder States
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderHour, setReminderHour] = useState(9);
+  const [reminderMinute, setReminderMinute] = useState(0);
+  const [reminderFrequency, setReminderFrequency] = useState<"once" | "daily" | "weekly">("daily");
+  const [showReminderModal, setShowReminderModal] = useState(false);
+
   const appVersion = Constants.expoConfig?.version || "1.0.0";
   const buildNumber = Constants.expoConfig?.android?.versionCode || 1;
+
+  const updateSavedSettings = (fields: any) => {
+    const nextFields = {
+      displayMode,
+      showSegments,
+      showComments,
+      fontSize,
+      reminderEnabled,
+      reminderHour,
+      reminderMinute,
+      reminderFrequency,
+      ...fields,
+    };
+    // Keep showPali updated for backward compatibility
+    if (nextFields.displayMode !== undefined) {
+      nextFields.showPali = nextFields.displayMode === "bilingual" || nextFields.displayMode === "pli";
+    }
+    saveSettings(nextFields);
+  };
+
+  const handleCycleDisplayMode = () => {
+    const modes: ("en" | "pli" | "bilingual")[] = ["bilingual", "en", "pli"];
+    const nextIdx = (modes.indexOf(displayMode) + 1) % modes.length;
+    const next = modes[nextIdx];
+    setDisplayMode(next);
+    updateSavedSettings({ displayMode: next });
+  };
+
+  const handleToggleSegments = () => {
+    const next = !showSegments;
+    setShowSegments(next);
+    updateSavedSettings({ showSegments: next });
+  };
+
+  const handleToggleComments = () => {
+    const next = !showComments;
+    setShowComments(next);
+    updateSavedSettings({ showComments: next });
+  };
+
+  const handleAdjustFontSize = (delta: number) => {
+    const next = Math.max(12, Math.min(32, fontSize + delta));
+    setFontSize(next);
+    updateSavedSettings({ fontSize: next });
+  };
+
+  const handleSaveReminder = async () => {
+    if (reminderEnabled) {
+      try {
+        // Request Notification Permission
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+        if (existingStatus !== "granted") {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+
+        if (finalStatus !== "granted") {
+          Alert.alert(
+            "Permission Required",
+            "Please enable notification permissions in system settings to receive Daily Sutta reminders."
+          );
+          setReminderEnabled(false);
+          updateSavedSettings({ reminderEnabled: false });
+          return;
+        }
+
+        // Cancel previous reminders
+        await Notifications.cancelAllScheduledNotificationsAsync();
+
+        // Get daily sutta for the alert text
+        const dailySutta = await getDailySutta();
+        const suttaTitle = dailySutta ? `${dailySutta.acronym}: ${dailySutta.title}` : "Today's Inspiration";
+        const suttaUid = dailySutta ? dailySutta.uid : "dn1";
+
+        // Schedule notification based on frequency
+        if (reminderFrequency === "daily") {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Daily Sutta Inspiration",
+              body: `Sutta of the Day: ${suttaTitle}`,
+              data: { url: `/(content)/reader/${suttaUid}` },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DAILY,
+              hour: reminderHour,
+              minute: reminderMinute,
+            },
+          });
+        } else if (reminderFrequency === "weekly") {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Weekly Sutta Inspiration",
+              body: `Weekly Sutta: ${suttaTitle}`,
+              data: { url: `/(content)/reader/${suttaUid}` },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+              weekday: 1, // Sunday
+              hour: reminderHour,
+              minute: reminderMinute,
+            },
+          });
+        } else {
+          // Once
+          const targetDate = new Date();
+          targetDate.setHours(reminderHour, reminderMinute, 0, 0);
+          if (targetDate.getTime() < Date.now()) {
+            targetDate.setDate(targetDate.getDate() + 1);
+          }
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Sutta Inspiration",
+              body: `Your scheduled Sutta: ${suttaTitle}`,
+              data: { url: `/(content)/reader/${suttaUid}` },
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: targetDate,
+            },
+          });
+        }
+
+        updateSavedSettings({
+          reminderEnabled: true,
+          reminderHour,
+          reminderMinute,
+          reminderFrequency,
+        });
+
+        Alert.alert("Success", "Reminder scheduled successfully!");
+        setShowReminderModal(false);
+      } catch (error) {
+        console.error("Error setting notification:", error);
+        Alert.alert("Error", "Failed to schedule notification.");
+      }
+    } else {
+      try {
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        updateSavedSettings({ reminderEnabled: false });
+        Alert.alert("Disabled", "Daily Sutta reminders have been disabled.");
+        setShowReminderModal(false);
+      } catch (error) {
+        console.error(error);
+      }
+    }
+  };
 
   React.useEffect(() => {
     const removeListener = addIndexListener((processed, total) => {
@@ -34,6 +206,26 @@ export default function SettingsScreen() {
           setIsIndexing(false);
           setStatus("Indexing Complete");
         }
+      }
+    });
+
+    // Load initial reader settings
+    loadSettings().then((saved) => {
+      if (saved) {
+        if (saved.displayMode !== undefined) {
+          setDisplayMode(saved.displayMode);
+        } else if (saved.showPali !== undefined) {
+          setDisplayMode(saved.showPali ? "bilingual" : "en");
+        }
+        if (saved.showSegments !== undefined) setShowSegments(saved.showSegments);
+        if (saved.showComments !== undefined) setShowComments(saved.showComments);
+        if (saved.fontSize !== undefined) setFontSize(saved.fontSize);
+
+        // Load reminder settings
+        if (saved.reminderEnabled !== undefined) setReminderEnabled(saved.reminderEnabled);
+        if (saved.reminderHour !== undefined) setReminderHour(saved.reminderHour);
+        if (saved.reminderMinute !== undefined) setReminderMinute(saved.reminderMinute);
+        if (saved.reminderFrequency !== undefined) setReminderFrequency(saved.reminderFrequency);
       }
     });
 
@@ -145,14 +337,227 @@ export default function SettingsScreen() {
         })}
       </View>
 
+      <SectionHeader 
+        title="Reader Preferences" 
+        subtitle="Default preferences for sutta reading screen" 
+      />
+      <View style={styles.section}>
+        {renderSettingRow({
+          icon: "book",
+          label: "Default Display Mode",
+          value: displayMode === "bilingual"
+            ? "Bilingual (EN+Pāli)"
+            : displayMode === "pli"
+            ? "Pāli Only"
+            : "English Only",
+          onPress: handleCycleDisplayMode,
+        })}
+        {renderSettingRow({
+          icon: "list",
+          label: "Segment Numbers",
+          value: showSegments ? "Show" : "Hide",
+          onPress: handleToggleSegments,
+        })}
+        {renderSettingRow({
+          icon: "chatbubble-ellipses",
+          label: "Notes & Comments",
+          value: showComments ? "Show" : "Hide",
+          onPress: handleToggleComments,
+        })}
+        
+        <View style={[styles.row, { backgroundColor: colors.card, borderBottomColor: colors.divider }]}>
+          <View style={styles.rowLead}>
+            <Ionicons name="text" size={22} color={colors.primary} />
+            <Text style={[styles.rowLabel, { color: colors.textPrimary }]}>
+              Default Font Size
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+            <Pressable 
+              onPress={() => handleAdjustFontSize(-2)}
+              style={({ pressed }) => [styles.fontBtn, { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text style={{ color: colors.textPrimary, fontWeight: "600" }}>A-</Text>
+            </Pressable>
+            <Text style={{ color: colors.textPrimary, fontWeight: "600", fontSize: 16 }}>{fontSize}</Text>
+            <Pressable 
+              onPress={() => handleAdjustFontSize(2)}
+              style={({ pressed }) => [styles.fontBtn, { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text style={{ color: colors.textPrimary, fontWeight: "600" }}>A+</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      <SectionHeader 
+        title="Reminders & Practice" 
+        subtitle="Manage daily practice notifications" 
+      />
+      <View style={styles.section}>
+        {renderSettingRow({
+          icon: "alarm-outline",
+          label: "Daily Sutta Reminder",
+          value: reminderEnabled 
+            ? `${reminderFrequency.charAt(0).toUpperCase() + reminderFrequency.slice(1)} at ${reminderHour.toString().padStart(2, "0")}:${reminderMinute.toString().padStart(2, "0")}`
+            : "Disabled",
+          onPress: () => setShowReminderModal(true),
+        })}
+      </View>
+
       <SectionHeader title="About" />
       <View style={styles.section}>
         {renderSettingRow({
           icon: "information-circle",
           label: "About Saddhamma",
-          onPress: () => router.push("/(tabs)/(settings)/about"),
+          onPress: () => router.push("/(tabs)/(settings)/about" as any),
+        })}
+        {renderSettingRow({
+          icon: "shield-checkmark-outline",
+          label: "Privacy Policy",
+          onPress: () => Linking.openURL("https://saddhamma.online/privacy.html"),
+        })}
+        {renderSettingRow({
+          icon: "bug-outline",
+          label: "Report an Issue",
+          onPress: () => Linking.openURL("https://github.com/dipantan/Saddhamma/issues"),
+        })}
+        {renderSettingRow({
+          icon: "heart-outline",
+          label: "Support the Project",
+          onPress: () => Linking.openURL("https://saddhamma.online/support"),
         })}
       </View>
+
+      {/* Reminder Config Modal */}
+      <Modal
+        visible={showReminderModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReminderModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Sutta Reminder Settings
+            </Text>
+
+            {/* Toggle Row */}
+            <View style={styles.modalSettingRow}>
+              <Text style={[styles.modalSettingLabel, { color: colors.textPrimary }]}>
+                Enable Reminder
+              </Text>
+              <Switch
+                value={reminderEnabled}
+                onValueChange={setReminderEnabled}
+                trackColor={{ false: colors.divider, true: colors.primary + "80" }}
+                thumbColor={reminderEnabled ? colors.primary : colors.outline}
+              />
+            </View>
+
+            {reminderEnabled && (
+              <>
+                {/* Frequency Selector */}
+                <Text style={[styles.modalSubLabel, { color: colors.textSecondary }]}>
+                  Frequency
+                </Text>
+                <View style={styles.freqOptions}>
+                  {(["once", "daily", "weekly"] as const).map((freq) => (
+                    <Pressable
+                      key={freq}
+                      style={({ pressed }) => [
+                        styles.freqChip,
+                        {
+                          backgroundColor: reminderFrequency === freq ? colors.primary : colors.surfaceVariant,
+                          opacity: pressed ? 0.7 : 1,
+                        },
+                      ]}
+                      onPress={() => setReminderFrequency(freq)}
+                    >
+                      <Text
+                        style={[
+                          styles.freqChipText,
+                          { color: reminderFrequency === freq ? colors.textInverse : colors.textPrimary },
+                        ]}
+                      >
+                        {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                {/* Time Picker Controls */}
+                <Text style={[styles.modalSubLabel, { color: colors.textSecondary }]}>
+                  Reminder Time
+                </Text>
+                <View style={styles.timeControlsRow}>
+                  {/* Hours */}
+                  <View style={styles.timeColumn}>
+                    <Pressable
+                      style={styles.timeBtn}
+                      onPress={() => setReminderHour((h) => (h + 1) % 24)}
+                    >
+                      <Ionicons name="chevron-up" size={24} color={colors.textPrimary} />
+                    </Pressable>
+                    <Text style={[styles.timeVal, { color: colors.textPrimary }]}>
+                      {reminderHour.toString().padStart(2, "0")}
+                    </Text>
+                    <Pressable
+                      style={styles.timeBtn}
+                      onPress={() => setReminderHour((h) => (h - 1 + 24) % 24)}
+                    >
+                      <Ionicons name="chevron-down" size={24} color={colors.textPrimary} />
+                    </Pressable>
+                    <Text style={[styles.timeLabel, { color: colors.textTertiary }]}>Hours</Text>
+                  </View>
+
+                  <Text style={[styles.timeColon, { color: colors.textPrimary }]}>:</Text>
+
+                  {/* Minutes */}
+                  <View style={styles.timeColumn}>
+                    <Pressable
+                      style={styles.timeBtn}
+                      onPress={() => setReminderMinute((m) => (m + 5) % 60)}
+                    >
+                      <Ionicons name="chevron-up" size={24} color={colors.textPrimary} />
+                    </Pressable>
+                    <Text style={[styles.timeVal, { color: colors.textPrimary }]}>
+                      {reminderMinute.toString().padStart(2, "0")}
+                    </Text>
+                    <Pressable
+                      style={styles.timeBtn}
+                      onPress={() => setReminderMinute((m) => (m - 5 + 60) % 60)}
+                    >
+                      <Ionicons name="chevron-down" size={24} color={colors.textPrimary} />
+                    </Pressable>
+                    <Text style={[styles.timeLabel, { color: colors.textTertiary }]}>Mins</Text>
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* Modal Action Buttons */}
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.surfaceVariant }]}
+                onPress={() => setShowReminderModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.textSecondary }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                onPress={handleSaveReminder}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.textInverse }]}>
+                  Save Settings
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.footer}>
         <Text style={[styles.versionText, { color: colors.textTertiary }]}>
@@ -245,5 +650,105 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     letterSpacing: 0.5,
+  },
+  fontBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: spacing.lg,
+  },
+  modalSettingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  modalSettingLabel: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  modalSubLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  freqOptions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  freqChip: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  freqChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  timeControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.md,
+    marginVertical: spacing.md,
+  },
+  timeColumn: {
+    alignItems: "center",
+  },
+  timeBtn: {
+    padding: 4,
+  },
+  timeVal: {
+    fontSize: 28,
+    fontWeight: "700",
+    marginVertical: 4,
+  },
+  timeLabel: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+  timeColon: {
+    fontSize: 28,
+    fontWeight: "700",
+    marginTop: -20,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBtnText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
