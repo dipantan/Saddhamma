@@ -298,6 +298,8 @@ export default function SettingsScreen() {
     <ScrollView 
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      showsHorizontalScrollIndicator={false}
     >
       <SectionHeader 
         title="Appearance" 

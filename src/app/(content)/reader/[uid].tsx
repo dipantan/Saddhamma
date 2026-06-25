@@ -42,6 +42,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -272,7 +273,7 @@ export default function ReaderScreen() {
     );
 
     return () => backHandler.remove();
-  }, [menuExpanded, selectedComment, router]);
+  }, [menuExpanded, selectedComment, activeSegmentId, editingNoteSegmentId, router]);
 
   const handleCopyEntireSutta = async () => {
     if (!data) return;
@@ -717,7 +718,8 @@ export default function ReaderScreen() {
                           setNoteText(userNotes[uid]);
                           setEditingNoteSegmentId(uid);
                         }}
-                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 6 })}
                       >
                         <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
                       </Pressable>
@@ -730,7 +732,8 @@ export default function ReaderScreen() {
                             return updated;
                           });
                         }}
-                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 6 })}
                       >
                         <Ionicons name="trash-outline" size={16} color={colors.error} />
                       </Pressable>
@@ -905,7 +908,10 @@ export default function ReaderScreen() {
           animationType="fade"
           onRequestClose={() => setEditingNoteSegmentId(null)}
         >
-          <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.modalOverlay}
+          >
             <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
               <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
                 {userNotes[editingNoteSegmentId] ? "Edit Note" : "Add Note"}
@@ -951,7 +957,7 @@ export default function ReaderScreen() {
                 </Pressable>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
     </Host>
@@ -1031,21 +1037,9 @@ const SegmentItem = React.memo(
     if (!displayTrans && (!showPali || !root)) return null;
 
     if (isHeader) {
-      const suttaHighlightedBgColor = colors.background === "#121212" ? "#302202" : "#FFF8EB";
-      const suttaHighlightedBorderColor = colors.primary + "60";
       return (
         <View 
-          style={[
-            styles.headerSegment,
-            isTitle && isSuttaHighlighted && {
-              backgroundColor: suttaHighlightedBgColor,
-              borderColor: suttaHighlightedBorderColor,
-              borderWidth: 1,
-              borderRadius: radius.lg,
-              padding: spacing.md,
-              marginHorizontal: -spacing.sm,
-            }
-          ]}
+          style={styles.headerSegment}
         >
           <Text selectable style={{ textAlign: "center", width: "100%" }}>
             {isTitle && isSuttaHighlighted && (

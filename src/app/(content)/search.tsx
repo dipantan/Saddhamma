@@ -187,6 +187,7 @@ export default function SearchScreen() {
         </View>
       ) : (
         <FlatList
+          showsVerticalScrollIndicator={false}
           data={results}
           renderItem={renderResult}
           keyExtractor={(item, index) => item.uid || index.toString()}

@@ -90,6 +90,7 @@ export default function BookmarksScreen() {
         />
       ) : (
         <FlatList
+          showsVerticalScrollIndicator={false}
           data={bookmarks}
           keyExtractor={(item) => item.uid}
           renderItem={renderItem}

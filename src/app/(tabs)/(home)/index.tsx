@@ -150,6 +150,7 @@ export default function HomeScreen() {
       />
 
       <FlatList
+        showsVerticalScrollIndicator={false}
         data={categories}
         renderItem={renderCategory}
         keyExtractor={(item) => item.uid}

@@ -211,6 +211,7 @@ export default function MenuScreen() {
         </View>
       ) : (
         <FlatList
+          showsVerticalScrollIndicator={false}
           data={items}
           renderItem={renderItem}
           keyExtractor={(item, index) => item.uid || index.toString()}

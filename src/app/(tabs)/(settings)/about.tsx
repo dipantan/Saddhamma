@@ -64,7 +64,7 @@ export default function AboutScreen() {
   );
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
       <Stack.Screen options={{ title: "About Saddhamma" }} />
       
       <View style={styles.header}>

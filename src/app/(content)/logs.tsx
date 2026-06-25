@@ -324,7 +324,12 @@ export default function PracticeLogsScreen() {
     );
 
     return (
-      <ScrollView contentContainerStyle={styles.tabContent}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+        <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
         {/* Date Selector Header */}
         <View style={[styles.datePickerContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <Pressable onPress={() => changeDate(-1)} style={styles.datePickerBtn}>
@@ -421,7 +426,8 @@ export default function PracticeLogsScreen() {
         >
           <Text style={[styles.saveBtnText, { color: colors.textInverse }]}>Save Check-in</Text>
         </Pressable>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   };
 
@@ -487,6 +493,7 @@ export default function PracticeLogsScreen() {
         </View>
 
         <FlatList
+          showsVerticalScrollIndicator={false}
           data={meditationLogs}
           renderItem={renderMeditationItem}
           keyExtractor={(item) => item.id}
@@ -557,6 +564,7 @@ export default function PracticeLogsScreen() {
         )}
 
         <FlatList
+          showsVerticalScrollIndicator={false}
           data={readingLogs}
           renderItem={renderReadingItem}
           keyExtractor={(item, idx) => `${item.uid}-${item.timestamp}-${idx}`}
@@ -724,7 +732,7 @@ export default function PracticeLogsScreen() {
     const categories = ["Sīla (Virtue)", "Samādhi (Concentration)", "Paññā (Wisdom)"] as const;
 
     return (
-      <ScrollView contentContainerStyle={styles.tabContent}>
+      <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false} showsHorizontalScrollIndicator={false}>
         {/* Summary Card */}
         <View style={[styles.badgeSummaryCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={styles.badgeSummaryTextGroup}>

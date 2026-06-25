@@ -877,7 +877,10 @@ export async function getSuttaContent(
 
   // Load Translation and Comments
   let selectedAuthor = author;
-  if (entry.translations) {
+  if (entry && entry.online_translation_text) {
+    translationText = entry.online_translation_text;
+    selectedAuthor = entry.online_author_uid || selectedAuthor;
+  } else if (entry.translations) {
     if (!entry.translations[selectedAuthor]) {
       selectedAuthor = Object.keys(entry.translations)[0] || "sujato";
     }
@@ -996,6 +999,91 @@ export async function getSuttaContent(
       }
     } catch (err) {
       console.error(`Error searching fallback legacy translations for ${uid}:`, err);
+    }
+  }
+
+  // Fallback 2: Try online fallback fetch for legacy translation if still empty
+  if (Object.keys(translationText).length === 0) {
+    try {
+      console.log(`[Online Fallback Legacy] Fetching translation online for ${uid}...`);
+      const leafNode = await findLeafNodeInMenus(uid);
+      let authorUid = selectedAuthor;
+      if (leafNode) {
+        const translations = leafNode.translations || [];
+        const enTrans = translations.find((t: any) => t.lang === "en");
+        if (enTrans) {
+          authorUid = enTrans.author_uid;
+        }
+      }
+
+      // Default fallback authors by book if not found
+      if (!authorUid || authorUid === "sujato") {
+        const lowerUid = uid.toLowerCase();
+        if (lowerUid.startsWith("ds")) {
+          authorUid = "rhysdavids_litt";
+        } else if (lowerUid.startsWith("vb")) {
+          authorUid = "thittila";
+        } else if (lowerUid.startsWith("kv")) {
+          authorUid = "aung-rhysdavids";
+        } else if (lowerUid.startsWith("pp")) {
+          authorUid = "law";
+        } else if (lowerUid.startsWith("dt")) {
+          authorUid = "narada";
+        }
+      }
+
+      const fetchUrl = `https://suttacentral.net/api/suttas/${uid}/${authorUid}?lang=en`;
+      console.log(`[Online Fallback Legacy] Fetching URL: ${fetchUrl}`);
+      const response = await fetch(fetchUrl);
+      if (response.ok) {
+        const json = await response.json();
+        const transObj = json.translation || json.root_text;
+        if (transObj && transObj.text) {
+          const html = transObj.text;
+          const regex = /<(p|h1|h2|h3|li)([^>]*)>([\s\S]*?)<\/\1>/gi;
+          let match;
+          const paragraphs: { tag: string; text: string }[] = [];
+          while ((match = regex.exec(html)) !== null) {
+            let tag = match[1].toLowerCase();
+            const attrs = match[2];
+            const text = match[3]
+              .replace(/<a[^>]*>[^<]*<\/a>/gi, "")
+              .replace(/<\/?[^>]+(>|$)/g, "")
+              .trim();
+            if (text.length > 0) {
+              if (tag === "li" && attrs.includes("division")) tag = "division";
+              paragraphs.push({ tag, text });
+            }
+          }
+          translationText = {};
+          paragraphs.forEach((p, idx) => {
+            translationText[`${uid}:legacy:${p.tag}:${idx + 1}`] = p.text;
+          });
+          selectedAuthor = authorUid;
+
+          // Cache the translation inside the database!
+          try {
+            const result = await database.getFirstAsync<any>(
+              "SELECT data FROM sutta_index WHERE uid = ?",
+              [uid]
+            );
+            if (result) {
+              const dbEntry = JSON.parse(result.data);
+              dbEntry.online_translation_text = translationText;
+              dbEntry.online_author_uid = authorUid;
+              await database.runAsync(
+                "UPDATE sutta_index SET data = ? WHERE uid = ?",
+                [JSON.stringify(dbEntry), uid]
+              );
+              console.log(`[Online Fallback Legacy] Cached translation for ${uid} successfully.`);
+            }
+          } catch (cacheErr) {
+            console.error("[Online Fallback Legacy] Failed to cache translation:", cacheErr);
+          }
+        }
+      }
+    } catch (onlineErr) {
+      console.error(`[Online Fallback Legacy] Failed to fetch translation online for ${uid}:`, onlineErr);
     }
   }
 
