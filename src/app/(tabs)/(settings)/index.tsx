@@ -6,6 +6,7 @@ import {
   loadSettings,
   saveSettings,
   getDailySutta,
+  syncSuttaReminders,
 } from "@/services/DataService";
 import { radius, spacing, useTheme, type ThemeMode } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -44,6 +45,12 @@ export default function SettingsScreen() {
   const [reminderMinute, setReminderMinute] = useState(0);
   const [reminderFrequency, setReminderFrequency] = useState<"once" | "daily" | "weekly">("daily");
   const [showReminderModal, setShowReminderModal] = useState(false);
+
+  // Temporary States for Modal Config
+  const [tempReminderEnabled, setTempReminderEnabled] = useState(false);
+  const [tempReminderHour, setTempReminderHour] = useState(9);
+  const [tempReminderMinute, setTempReminderMinute] = useState(0);
+  const [tempReminderFrequency, setTempReminderFrequency] = useState<"once" | "daily" | "weekly">("daily");
 
   const appVersion = Constants.expoConfig?.version || "1.0.0";
   const buildNumber = Constants.expoConfig?.android?.versionCode || 1;
@@ -94,7 +101,7 @@ export default function SettingsScreen() {
   };
 
   const handleSaveReminder = async () => {
-    if (reminderEnabled) {
+    if (tempReminderEnabled) {
       try {
         // Request Notification Permission
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -109,73 +116,30 @@ export default function SettingsScreen() {
             "Permission Required",
             "Please enable notification permissions in system settings to receive Daily Sutta reminders."
           );
+          setTempReminderEnabled(false);
           setReminderEnabled(false);
           updateSavedSettings({ reminderEnabled: false });
+          await syncSuttaReminders();
           return;
         }
 
-        // Cancel previous reminders
-        await Notifications.cancelAllScheduledNotificationsAsync();
-
-        // Get daily sutta for the alert text
-        const dailySutta = await getDailySutta();
-        const suttaTitle = dailySutta ? `${dailySutta.acronym}: ${dailySutta.title}` : "Today's Inspiration";
-        const suttaUid = dailySutta ? dailySutta.uid : "dn1";
-
-        // Schedule notification based on frequency
-        if (reminderFrequency === "daily") {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Daily Sutta Inspiration",
-              body: `Sutta of the Day: ${suttaTitle}`,
-              data: { url: `/(content)/reader/${suttaUid}` },
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.DAILY,
-              hour: reminderHour,
-              minute: reminderMinute,
-            },
-          });
-        } else if (reminderFrequency === "weekly") {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Weekly Sutta Inspiration",
-              body: `Weekly Sutta: ${suttaTitle}`,
-              data: { url: `/(content)/reader/${suttaUid}` },
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-              weekday: 1, // Sunday
-              hour: reminderHour,
-              minute: reminderMinute,
-            },
-          });
-        } else {
-          // Once
-          const targetDate = new Date();
-          targetDate.setHours(reminderHour, reminderMinute, 0, 0);
-          if (targetDate.getTime() < Date.now()) {
-            targetDate.setDate(targetDate.getDate() + 1);
-          }
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Sutta Inspiration",
-              body: `Your scheduled Sutta: ${suttaTitle}`,
-              data: { url: `/(content)/reader/${suttaUid}` },
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.DATE,
-              date: targetDate,
-            },
-          });
-        }
-
-        updateSavedSettings({
+        // Save settings first, then sync reminders
+        const nextSettings = {
           reminderEnabled: true,
-          reminderHour,
-          reminderMinute,
-          reminderFrequency,
-        });
+          reminderHour: tempReminderHour,
+          reminderMinute: tempReminderMinute,
+          reminderFrequency: tempReminderFrequency,
+        };
+        updateSavedSettings(nextSettings);
+
+        // Schedule notifications
+        await syncSuttaReminders();
+
+        // Commit temp states to main component states
+        setReminderEnabled(true);
+        setReminderHour(tempReminderHour);
+        setReminderMinute(tempReminderMinute);
+        setReminderFrequency(tempReminderFrequency);
 
         Alert.alert("Success", "Reminder scheduled successfully!");
         setShowReminderModal(false);
@@ -185,12 +149,16 @@ export default function SettingsScreen() {
       }
     } else {
       try {
-        await Notifications.cancelAllScheduledNotificationsAsync();
         updateSavedSettings({ reminderEnabled: false });
+        await syncSuttaReminders();
+        
+        setReminderEnabled(false);
+
         Alert.alert("Disabled", "Daily Sutta reminders have been disabled.");
         setShowReminderModal(false);
       } catch (error) {
         console.error(error);
+        Alert.alert("Error", "Failed to disable reminders.");
       }
     }
   };
@@ -403,7 +371,13 @@ export default function SettingsScreen() {
           value: reminderEnabled 
             ? `${reminderFrequency.charAt(0).toUpperCase() + reminderFrequency.slice(1)} at ${reminderHour.toString().padStart(2, "0")}:${reminderMinute.toString().padStart(2, "0")}`
             : "Disabled",
-          onPress: () => setShowReminderModal(true),
+          onPress: () => {
+            setTempReminderEnabled(reminderEnabled);
+            setTempReminderHour(reminderHour);
+            setTempReminderMinute(reminderMinute);
+            setTempReminderFrequency(reminderFrequency);
+            setShowReminderModal(true);
+          },
         })}
       </View>
 
@@ -450,14 +424,14 @@ export default function SettingsScreen() {
                 Enable Reminder
               </Text>
               <Switch
-                value={reminderEnabled}
-                onValueChange={setReminderEnabled}
+                value={tempReminderEnabled}
+                onValueChange={setTempReminderEnabled}
                 trackColor={{ false: colors.divider, true: colors.primary + "80" }}
-                thumbColor={reminderEnabled ? colors.primary : colors.outline}
+                thumbColor={tempReminderEnabled ? colors.primary : colors.outline}
               />
             </View>
 
-            {reminderEnabled && (
+            {tempReminderEnabled && (
               <>
                 {/* Frequency Selector */}
                 <Text style={[styles.modalSubLabel, { color: colors.textSecondary }]}>
@@ -470,16 +444,16 @@ export default function SettingsScreen() {
                       style={({ pressed }) => [
                         styles.freqChip,
                         {
-                          backgroundColor: reminderFrequency === freq ? colors.primary : colors.surfaceVariant,
+                          backgroundColor: tempReminderFrequency === freq ? colors.primary : colors.surfaceVariant,
                           opacity: pressed ? 0.7 : 1,
                         },
                       ]}
-                      onPress={() => setReminderFrequency(freq)}
+                      onPress={() => setTempReminderFrequency(freq)}
                     >
                       <Text
                         style={[
                           styles.freqChipText,
-                          { color: reminderFrequency === freq ? colors.textInverse : colors.textPrimary },
+                          { color: tempReminderFrequency === freq ? colors.textInverse : colors.textPrimary },
                         ]}
                       >
                         {freq.charAt(0).toUpperCase() + freq.slice(1)}
@@ -497,16 +471,16 @@ export default function SettingsScreen() {
                   <View style={styles.timeColumn}>
                     <Pressable
                       style={styles.timeBtn}
-                      onPress={() => setReminderHour((h) => (h + 1) % 24)}
+                      onPress={() => setTempReminderHour((h) => (h + 1) % 24)}
                     >
                       <Ionicons name="chevron-up" size={24} color={colors.textPrimary} />
                     </Pressable>
                     <Text style={[styles.timeVal, { color: colors.textPrimary }]}>
-                      {reminderHour.toString().padStart(2, "0")}
+                      {tempReminderHour.toString().padStart(2, "0")}
                     </Text>
                     <Pressable
                       style={styles.timeBtn}
-                      onPress={() => setReminderHour((h) => (h - 1 + 24) % 24)}
+                      onPress={() => setTempReminderHour((h) => (h - 1 + 24) % 24)}
                     >
                       <Ionicons name="chevron-down" size={24} color={colors.textPrimary} />
                     </Pressable>
@@ -519,16 +493,16 @@ export default function SettingsScreen() {
                   <View style={styles.timeColumn}>
                     <Pressable
                       style={styles.timeBtn}
-                      onPress={() => setReminderMinute((m) => (m + 5) % 60)}
+                      onPress={() => setTempReminderMinute((m) => (m + 5) % 60)}
                     >
                       <Ionicons name="chevron-up" size={24} color={colors.textPrimary} />
                     </Pressable>
                     <Text style={[styles.timeVal, { color: colors.textPrimary }]}>
-                      {reminderMinute.toString().padStart(2, "0")}
+                      {tempReminderMinute.toString().padStart(2, "0")}
                     </Text>
                     <Pressable
                       style={styles.timeBtn}
-                      onPress={() => setReminderMinute((m) => (m - 5 + 60) % 60)}
+                      onPress={() => setTempReminderMinute((m) => (m - 5 + 60) % 60)}
                     >
                       <Ionicons name="chevron-down" size={24} color={colors.textPrimary} />
                     </Pressable>

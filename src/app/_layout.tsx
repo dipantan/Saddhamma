@@ -3,6 +3,7 @@ import {
   buildFullTextIndex,
   isDataReady,
   isIndexingInProgress,
+  syncSuttaReminders,
 } from "@/services/DataService";
 import { ThemeProvider, useTheme } from "@/theme";
 import { Stack, useRouter } from "expo-router";
@@ -79,7 +80,21 @@ function RootNavigator() {
   const router = useRouter();
   
   useEffect(() => {
-    // Handle Notification Tap Deep Linking
+    let isMounted = true;
+
+    // Handle notification that opened the app (cold start)
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (!isMounted) return;
+      const url = response?.notification.request.content.data?.url;
+      if (url) {
+        // Delay slightly to ensure layout and router are fully ready
+        setTimeout(() => {
+          router.push(url as any);
+        }, 500);
+      }
+    }).catch(err => console.error("Error getting last notification response:", err));
+
+    // Handle Notification Tap Deep Linking while app is running/backgrounded
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
       const url = response.notification.request.content.data?.url;
       if (url) {
@@ -117,6 +132,7 @@ function RootNavigator() {
     }
     
     return () => {
+      isMounted = false;
       responseSubscription.remove();
     };
   }, [router]);
@@ -131,6 +147,9 @@ function RootNavigator() {
           console.log("[Background] Starting FTS indexing...");
           await buildFullTextIndex();
           console.log("[Background] FTS indexing complete.");
+
+          console.log("[Background] Synchronizing sutta reminders...");
+          await syncSuttaReminders();
         }
       } catch (error) {
         console.error("[Background] Task failed:", error);

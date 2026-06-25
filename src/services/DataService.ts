@@ -1,5 +1,6 @@
 import { Directory, File as ExpoFile, Paths } from "expo-file-system";
 import * as SQLite from "expo-sqlite";
+import * as Notifications from "expo-notifications";
 
 const DB_NAME = "sutta_db.sqlite";
 const DATA_DIR = `${Paths.document.uri}sutta_data/`;
@@ -1668,20 +1669,39 @@ export async function deleteReadingLog(uid: string, timestamp: number): Promise<
   }
 }
 
-export async function getDailySutta(): Promise<{ uid: string; title: string; acronym?: string } | null> {
+export async function getDailySutta(date: Date = new Date()): Promise<{ uid: string; title: string; acronym?: string } | null> {
   try {
     const database = await getDb();
     
-    // Filter suttas to include only Sutta Pitaka, excluding Vinaya (pli-tv-) and Abhidhamma (ds, vb, dt, pp, kv, ya, patthana)
+    // Filter suttas to include only Sutta Pitaka collections from the Pali Canon
     const sqlFilter = `
-      uid NOT LIKE 'pli-tv-%'
-      AND uid NOT LIKE 'ds%'
-      AND uid NOT LIKE 'vb%'
-      AND uid NOT LIKE 'dt%'
-      AND uid NOT LIKE 'pp%'
-      AND uid NOT LIKE 'kv%'
-      AND uid NOT LIKE 'ya%'
-      AND uid NOT LIKE 'patthana%'
+      (
+        uid LIKE 'dn%'
+        OR uid LIKE 'mn%'
+        OR uid LIKE 'sn%'
+        OR uid LIKE 'an%'
+        OR uid LIKE 'khp%'
+        OR uid LIKE 'kp%'
+        OR uid LIKE 'dhp%'
+        OR uid LIKE 'ud%'
+        OR uid LIKE 'iti%'
+        OR uid LIKE 'snp%'
+        OR uid LIKE 'vv%'
+        OR uid LIKE 'pv%'
+        OR uid LIKE 'thag%'
+        OR uid LIKE 'thig%'
+        OR uid LIKE 'ap%'
+        OR uid LIKE 'bv%'
+        OR uid LIKE 'cp%'
+        OR uid LIKE 'ja%'
+        OR uid LIKE 'nd1%'
+        OR uid LIKE 'nd2%'
+        OR uid LIKE 'ps%'
+        OR uid LIKE 'mil%'
+        OR uid LIKE 'ne%'
+        OR uid LIKE 'nett%'
+        OR uid LIKE 'pe%'
+      )
     `;
 
     const countResult = await database.getFirstAsync<{ count: number }>(
@@ -1691,8 +1711,7 @@ export async function getDailySutta(): Promise<{ uid: string; title: string; acr
     if (count === 0) return null;
 
     // Daily seed YYYYMMDD
-    const today = new Date();
-    const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+    const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
 
     // Try up to 20 suttas to find one with an English translation
     for (let attempt = 0; attempt < 20; attempt++) {
@@ -1741,6 +1760,119 @@ export async function getDailySutta(): Promise<{ uid: string; title: string; acr
   } catch (error) {
     console.error("Error getting daily sutta:", error);
     return null;
+  }
+}
+
+export async function syncSuttaReminders(): Promise<void> {
+  try {
+    const saved = await loadSettings();
+    if (!saved || !saved.reminderEnabled) {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+      console.log("[Notification] Cancelled all scheduled notifications because reminder is disabled.");
+      return;
+    }
+
+    const { reminderHour = 9, reminderMinute = 0, reminderFrequency = "daily" } = saved;
+    
+    // Request permission first
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    if (existingStatus !== "granted") {
+      console.log("[Notification] Permission not granted, skipping rescheduling.");
+      return;
+    }
+
+    // Cancel all current scheduled notifications to start clean
+    await Notifications.cancelAllScheduledNotificationsAsync();
+    console.log("[Notification] Cleaning previous schedule...");
+
+    const today = new Date();
+
+    if (reminderFrequency === "daily") {
+      // Schedule for the next 7 days
+      console.log("[Notification] Scheduling 7 days of daily suttas...");
+      for (let i = 0; i < 7; i++) {
+        const targetDate = new Date();
+        targetDate.setDate(today.getDate() + i);
+        targetDate.setHours(reminderHour, reminderMinute, 0, 0);
+
+        if (targetDate.getTime() <= Date.now()) {
+          continue;
+        }
+
+        const dailySutta = await getDailySutta(targetDate);
+        if (!dailySutta) continue;
+
+        const suttaTitle = `${dailySutta.acronym}: ${dailySutta.title}`;
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Daily Sutta Inspiration",
+            body: `Sutta of the Day: ${suttaTitle}`,
+            data: { url: `/reader/${dailySutta.uid}` },
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: targetDate,
+          },
+        });
+      }
+    } else if (reminderFrequency === "weekly") {
+      // Schedule for the next 4 weeks (e.g. on Sundays)
+      console.log("[Notification] Scheduling 4 weeks of weekly suttas...");
+      const nextSunday = new Date(today);
+      nextSunday.setDate(today.getDate() + (7 - today.getDay()) % 7);
+      nextSunday.setHours(reminderHour, reminderMinute, 0, 0);
+      if (nextSunday.getTime() <= Date.now()) {
+        nextSunday.setDate(nextSunday.getDate() + 7);
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const targetDate = new Date(nextSunday);
+        targetDate.setDate(nextSunday.getDate() + i * 7);
+
+        const dailySutta = await getDailySutta(targetDate);
+        if (!dailySutta) continue;
+
+        const suttaTitle = `${dailySutta.acronym}: ${dailySutta.title}`;
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Weekly Sutta Inspiration",
+            body: `Weekly Sutta: ${suttaTitle}`,
+            data: { url: `/reader/${dailySutta.uid}` },
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: targetDate,
+          },
+        });
+      }
+    } else {
+      // Once
+      console.log("[Notification] Scheduling single sutta reminder...");
+      const targetDate = new Date();
+      targetDate.setHours(reminderHour, reminderMinute, 0, 0);
+      if (targetDate.getTime() < Date.now()) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+
+      const dailySutta = await getDailySutta(targetDate);
+      if (dailySutta) {
+        const suttaTitle = `${dailySutta.acronym}: ${dailySutta.title}`;
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Sutta Inspiration",
+            body: `Your scheduled Sutta: ${suttaTitle}`,
+            data: { url: `/reader/${dailySutta.uid}` },
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: targetDate,
+          },
+        });
+      }
+    }
+    console.log("[Notification] Rescheduling complete.");
+  } catch (error) {
+    console.error("[Notification] Rescheduling failed:", error);
   }
 }
 
