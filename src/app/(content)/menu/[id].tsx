@@ -62,12 +62,50 @@ export default function MenuScreen() {
           blurb = data.blurb || "";
         }
 
-        // Sort items naturally if UIDs contain numbers (e.g. mn1, mn2, an1, an2...)
-        const hasNumericUids = menuItems.some(item => item.uid && /\d/.test(item.uid));
-        if (hasNumericUids) {
-          menuItems.sort((a, b) =>
-            a.uid.localeCompare(b.uid, undefined, { numeric: true, sensitivity: "base" })
-          );
+        // Sort items naturally if UIDs or child ranges contain numbers (e.g. SN 1.1-10, AN 1.31-40)
+        const needsSorting = menuItems.some(
+          item => (item.uid && /\d/.test(item.uid)) || (item.child_range && /\d/.test(item.child_range))
+        );
+        if (needsSorting) {
+          menuItems.sort((a, b) => {
+            const getNumericKeys = (str: string): number[] => {
+              if (!str) return [];
+              const matches = str.match(/\d+/g);
+              return matches ? matches.map(Number) : [];
+            };
+
+            const rangeA = a.child_range || "";
+            const rangeB = b.child_range || "";
+
+            const keysA = getNumericKeys(rangeA);
+            const keysB = getNumericKeys(rangeB);
+
+            const finalKeysA = keysA.length > 0 ? keysA : getNumericKeys(a.uid || "");
+            const finalKeysB = keysB.length > 0 ? keysB : getNumericKeys(b.uid || "");
+
+            const hasNumsA = finalKeysA.length > 0;
+            const hasNumsB = finalKeysB.length > 0;
+
+            if (hasNumsA && hasNumsB) {
+              const minLength = Math.min(finalKeysA.length, finalKeysB.length);
+              for (let i = 0; i < minLength; i++) {
+                if (finalKeysA[i] !== finalKeysB[i]) {
+                  return finalKeysA[i] - finalKeysB[i];
+                }
+              }
+              if (finalKeysA.length !== finalKeysB.length) {
+                return finalKeysA.length - finalKeysB.length;
+              }
+            } else if (hasNumsA && !hasNumsB) {
+              return -1;
+            } else if (!hasNumsA && hasNumsB) {
+              return 1;
+            }
+
+            const strA = rangeA || a.uid || "";
+            const strB = rangeB || b.uid || "";
+            return strA.localeCompare(strB, undefined, { numeric: true, sensitivity: "base" });
+          });
         }
 
         setItems(menuItems);
