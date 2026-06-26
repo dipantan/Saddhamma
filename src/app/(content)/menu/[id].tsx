@@ -96,10 +96,11 @@ export default function MenuScreen() {
               if (finalKeysA.length !== finalKeysB.length) {
                 return finalKeysA.length - finalKeysB.length;
               }
+              // If numbers are identical, fall through to string comparison
             } else if (hasNumsA && !hasNumsB) {
-              return -1;
+              return 1; // Put unnumbered (b) first (e.g. introductions)
             } else if (!hasNumsA && hasNumsB) {
-              return 1;
+              return -1; // Put unnumbered (a) first (e.g. introductions)
             }
 
             const strA = rangeA || a.uid || "";

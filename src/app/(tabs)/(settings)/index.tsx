@@ -25,6 +25,7 @@ import {
   Modal,
 } from "react-native";
 import * as Notifications from "expo-notifications";
+import * as WebBrowser from "expo-web-browser";
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
@@ -401,7 +402,7 @@ export default function SettingsScreen() {
         {renderSettingRow({
           icon: "heart-outline",
           label: "Support the Project",
-          onPress: () => Linking.openURL("https://saddhamma.online/support"),
+          onPress: () => WebBrowser.openBrowserAsync("https://saddhamma.online/support"),
         })}
       </View>
 

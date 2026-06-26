@@ -486,11 +486,11 @@ export default function ReaderScreen() {
                     </Trigger>
 
                     <Items>
-                      <DropdownMenuItem onClick={() => setDisplayMode(showPali ? "en" : "bilingual")}>
+                      <DropdownMenuItem onClick={() => setDisplayMode("bilingual")}>
                         <DropdownMenuItem.LeadingIcon>
                           <Checkbox
-                            value={showPali}
-                            onCheckedChange={(checked) => setDisplayMode(checked ? "bilingual" : "en")}
+                            value={displayMode === "bilingual"}
+                            onCheckedChange={() => setDisplayMode("bilingual")}
                             colors={{
                               checkedColor: colors.primary,
                               uncheckedColor: colors.outline,
@@ -503,7 +503,51 @@ export default function ReaderScreen() {
                             color={colors.textPrimary}
                             style={{ typography: "bodyLarge" }}
                           >
-                            {`${getLanguageName(resolvedRootLang)} Text`}
+                            Bilingual (EN + Pāli)
+                          </NativeText>
+                        </DropdownMenuItem.Text>
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem onClick={() => setDisplayMode("en")}>
+                        <DropdownMenuItem.LeadingIcon>
+                          <Checkbox
+                            value={displayMode === "en"}
+                            onCheckedChange={() => setDisplayMode("en")}
+                            colors={{
+                              checkedColor: colors.primary,
+                              uncheckedColor: colors.outline,
+                              checkmarkColor: colors.surface,
+                            }}
+                          />
+                        </DropdownMenuItem.LeadingIcon>
+                        <DropdownMenuItem.Text>
+                          <NativeText
+                            color={colors.textPrimary}
+                            style={{ typography: "bodyLarge" }}
+                          >
+                            English Only
+                          </NativeText>
+                        </DropdownMenuItem.Text>
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem onClick={() => setDisplayMode("pli")}>
+                        <DropdownMenuItem.LeadingIcon>
+                          <Checkbox
+                            value={displayMode === "pli"}
+                            onCheckedChange={() => setDisplayMode("pli")}
+                            colors={{
+                              checkedColor: colors.primary,
+                              uncheckedColor: colors.outline,
+                              checkmarkColor: colors.surface,
+                            }}
+                          />
+                        </DropdownMenuItem.LeadingIcon>
+                        <DropdownMenuItem.Text>
+                          <NativeText
+                            color={colors.textPrimary}
+                            style={{ typography: "bodyLarge" }}
+                          >
+                            {`${getLanguageName(resolvedRootLang)} Only`}
                           </NativeText>
                         </DropdownMenuItem.Text>
                       </DropdownMenuItem>

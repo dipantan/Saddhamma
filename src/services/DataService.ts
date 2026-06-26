@@ -116,7 +116,17 @@ export async function checkBookmark(uid: string): Promise<boolean> {
 export async function saveSettings(settings: any): Promise<void> {
   try {
     const file = new ExpoFile(SETTINGS_PATH);
-    await file.write(JSON.stringify(settings));
+    let current: any = {};
+    if (await file.exists) {
+      try {
+        const content = await file.text();
+        current = JSON.parse(content);
+      } catch (e) {
+        console.error("Error reading current settings during save:", e);
+      }
+    }
+    const updated = { ...current, ...settings };
+    await file.write(JSON.stringify(updated));
   } catch (error) {
     console.error("Error saving settings:", error);
   }
@@ -1723,8 +1733,8 @@ export async function getDailySutta(date: Date = new Date()): Promise<{ uid: str
       if (row) {
         try {
           const parsed = JSON.parse(row.data);
-          // Only pick if it has an English translation (translation_text has segments)
-          if (parsed.translation_text && Object.keys(parsed.translation_text).length > 0) {
+          // Only pick if it has an English translation
+          if (parsed.translations && Object.keys(parsed.translations).length > 0) {
             return {
               uid: row.uid,
               title: row.title,

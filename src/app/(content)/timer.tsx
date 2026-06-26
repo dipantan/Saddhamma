@@ -51,11 +51,14 @@ export default function MeditationTimerScreen() {
   const [scaleAnim] = useState(() => new Animated.Value(1));
   const pulseAnim = useRef<Animated.CompositeAnimation | null>(null);
 
-  // Format MM:SS
+  // Format MM:SS (supports negative values for overtime)
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    const isOvertime = seconds < 0;
+    const absSeconds = Math.abs(seconds);
+    const mins = Math.floor(absSeconds / 60);
+    const secs = absSeconds % 60;
+    const timeStr = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    return isOvertime ? `+${timeStr}` : timeStr;
   };
 
   // Breathing animation loop
@@ -125,31 +128,34 @@ export default function MeditationTimerScreen() {
     }
   };
 
+  // Finish Timer (Overtime Completion)
+  const handleFinish = () => {
+    const elapsedSeconds = selectedMinutes * 60 - timeLeft;
+    const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+
+    setIsRunning(false);
+    setIsPaused(false);
+    stopBreathingAnimation();
+    setActualDurationMinutes(elapsedMinutes);
+    setShowLogModal(true);
+  };
+
   // Timer Tick Effect
   useEffect(() => {
     if (isRunning && !isPaused) {
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
-          if (prev <= 1) {
-            // Timer Finished
-            clearInterval(timerRef.current!);
-            setIsRunning(false);
-            stopBreathingAnimation();
-            
-            // Completion Vibration
+          const nextTimeLeft = prev - 1;
+
+          // Vibration completion trigger when passing from 1 to 0
+          if (prev === 1) {
             Vibration.vibrate([0, 500, 250, 500, 250, 500]);
-            
-            setActualDurationMinutes(selectedMinutes);
-            setShowLogModal(true);
-            return 0;
           }
 
-          // Vibration Triggers for bells
-          const totalSeconds = selectedMinutes * 60;
-          const nextTimeLeft = prev - 1;
-          const elapsed = totalSeconds - nextTimeLeft;
-
+          // Vibration triggers for bells (only during normal countdown)
           if (nextTimeLeft > 0) {
+            const totalSeconds = selectedMinutes * 60;
+            const elapsed = totalSeconds - nextTimeLeft;
             // Halfway Bell
             if (halfwayBell && elapsed === Math.floor(totalSeconds / 2)) {
               Vibration.vibrate(200);
@@ -160,7 +166,7 @@ export default function MeditationTimerScreen() {
             }
           }
 
-          return prev - 1;
+          return nextTimeLeft;
         });
       }, 1000);
     } else {
@@ -207,9 +213,13 @@ export default function MeditationTimerScreen() {
 
   // Determine breathing instruction text based on tick remainder
   // Scale goes up from 0s to 4s (Inhale), goes down from 4s to 8s (Exhale)
-  const isExhaling = (timeLeft % 8) < 4;
+  const isOvertime = timeLeft <= 0;
+  const isExhaling = (Math.abs(timeLeft) % 8) < 4;
   const instructionText = isRunning && !isPaused 
-    ? (isExhaling ? "Exhale gently…" : "Inhale deeply…") 
+    ? (isOvertime
+        ? `Overtime • ${isExhaling ? "Exhale gently…" : "Inhale deeply…"}`
+        : (isExhaling ? "Exhale gently…" : "Inhale deeply…")
+      ) 
     : "Be still and mindfully aware";
 
   return (
@@ -420,15 +430,28 @@ export default function MeditationTimerScreen() {
                 </Pressable>
               </>
             ) : (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.controlCircle,
-                  { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1 },
-                ]}
-                onPress={handlePause}
-              >
-                <Ionicons name="pause" size={24} color={colors.textPrimary} />
-              </Pressable>
+              <>
+                {timeLeft <= 0 && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.controlCircle,
+                      { backgroundColor: colors.primary, marginRight: spacing.md, opacity: pressed ? 0.8 : 1 },
+                    ]}
+                    onPress={handleFinish}
+                  >
+                    <Ionicons name="checkmark" size={24} color={colors.textInverse} />
+                  </Pressable>
+                )}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.controlCircle,
+                    { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1 },
+                  ]}
+                  onPress={handlePause}
+                >
+                  <Ionicons name="pause" size={24} color={colors.textPrimary} />
+                </Pressable>
+              </>
             )}
           </View>
         </View>
