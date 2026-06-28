@@ -1,6 +1,5 @@
 import { getRootCategories, isDataReady, getDailySutta } from "@/services/DataService";
 import { checkForUpdates, syncData } from "@/services/SyncService";
-import * as WebBrowser from "expo-web-browser";
 import { useTheme } from "@/theme/ThemeContext";
 import { radius, spacing } from "@/theme/tokens";
 import { Stack, useRouter } from "expo-router";
@@ -257,22 +256,6 @@ export default function HomeScreen() {
           </View>
         }
         contentContainerStyle={styles.listContent}
-        ListFooterComponent={
-          <View style={styles.footerContainer}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.supportBtn,
-                { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 1 }
-              ]}
-              onPress={() => WebBrowser.openBrowserAsync("https://saddhamma.online/support")}
-            >
-              <Ionicons name="heart" size={18} color="#E040FB" style={{ marginRight: 8 }} />
-              <Text style={[styles.supportBtnText, { color: colors.textPrimary }]}>
-                Support Saddhamma (Buy Me a Coffee)
-              </Text>
-            </Pressable>
-          </View>
-        }
       />
 
       {/* Sync Dialog */}
@@ -526,28 +509,6 @@ const styles = StyleSheet.create({
   readNowBtnText: {
     fontSize: 13,
     fontWeight: "700",
-  },
-  footerContainer: {
-    padding: spacing.lg,
-    alignItems: "center",
-    marginTop: spacing.md,
-  },
-  supportBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
-  },
-  supportBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
   },
 });
 

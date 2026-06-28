@@ -144,7 +144,6 @@ export default function AboutScreen() {
 
         <View style={styles.buttonGroup}>
           {renderButton("bug-outline", "Report an Issue", "https://github.com/dipantan/Saddhamma/issues")}
-          {renderButton("heart-outline", "Support the Project", "https://saddhamma.online/support")}
         </View>
 
         {renderSection(

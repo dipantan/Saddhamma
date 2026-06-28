@@ -402,7 +402,7 @@ export default function SettingsScreen() {
         {renderSettingRow({
           icon: "heart-outline",
           label: "Support the Project",
-          onPress: () => WebBrowser.openBrowserAsync("https://saddhamma.online/support"),
+          onPress: () => Linking.openURL("https://saddhamma.online/support.html"),
         })}
       </View>
 
