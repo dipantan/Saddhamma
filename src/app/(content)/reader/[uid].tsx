@@ -1,4 +1,5 @@
-import { LoadingState } from "@/components";
+import { LoadingState, CustomErrorBoundary } from "@/components";
+export { CustomErrorBoundary as ErrorBoundary } from "@/components";
 import {
   checkBookmark,
   getSuttaContent,
@@ -771,202 +772,148 @@ export default function ReaderScreen() {
       </View>
 
       {selectedComment && (
-        <ModalBottomSheet
-          onDismissRequest={() => setSelectedComment(null)}
-          showDragHandle={true}
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setSelectedComment(null)}
         >
-          <Column
-            modifiers={[
-              paddingAll(24),
-              fillMaxWidth(),
-            ]}
-          >
-            <NativeText
-              color={colors.textPrimary}
-              style={{ typography: "titleLarge" }}
-              modifiers={[padding(0, 0, 16, 0)]}
-            >
-              Note
-            </NativeText>
-            <LazyColumn modifiers={[fillMaxWidth(), height(300)]}>
-              <Items>
-                <NativeText
-                  color={colors.textPrimary}
-                  style={{ typography: "bodyMedium" }}
-                >
+          <Pressable style={styles.sheetOverlay} onPress={() => setSelectedComment(null)}>
+            <Pressable style={[styles.sheetContent, { backgroundColor: colors.surface }]}>
+              <View style={styles.sheetHeader}>
+                <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Note / Commentary</Text>
+                <Pressable onPress={() => setSelectedComment(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close" size={24} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              <View style={{ maxHeight: 300, marginVertical: spacing.md }}>
+                <Text style={[styles.commentText, { color: colors.textPrimary, fontSize: Math.max(13, fontSize - 1) }]}>
                   {stripHtml(selectedComment)}
-                </NativeText>
-              </Items>
-            </LazyColumn>
-          </Column>
-        </ModalBottomSheet>
+                </Text>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
       )}
 
       {activeSegmentId && (
-        <ModalBottomSheet
-          onDismissRequest={() => setActiveSegmentId(null)}
-          showDragHandle={true}
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setActiveSegmentId(null)}
         >
-          <Column
-            modifiers={[
-              paddingAll(24),
-              fillMaxWidth(),
-            ]}
-          >
-            <NativeText
-              color={colors.textPrimary}
-              style={{ typography: "titleLarge" }}
-              modifiers={[padding(0, 0, 12, 0)]}
-            >
-              Highlight & Annotate Text
-            </NativeText>
+          <Pressable style={styles.sheetOverlay} onPress={() => setActiveSegmentId(null)}>
+            <Pressable style={[styles.sheetContent, { backgroundColor: colors.surface }]}>
+              <View style={styles.sheetHeader}>
+                <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Highlight & Annotate Text</Text>
+                <Pressable onPress={() => setActiveSegmentId(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close" size={24} color={colors.textSecondary} />
+                </Pressable>
+              </View>
 
-            <NativeText
-              color={colors.textSecondary}
-              style={{ typography: "labelSmall" }}
-              modifiers={[padding(0, 0, 8, 0)]}
-            >
-              HIGHLIGHT COLOR
-            </NativeText>
-            
-            <Row
-              horizontalArrangement={{ spacedBy: 8 }}
-              modifiers={[fillMaxWidth(), padding(0, 0, 0, 16)]}
-            >
-              <Button
-                colors={{ containerColor: "#FFB300" }}
-                onClick={async () => {
-                  const updated = await saveSegmentAnnotation(activeSegmentId, "yellow", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
-                  setUserAnnotations(updated);
-                  setActiveSegmentId(null);
-                }}
-                modifiers={[fillMaxWidth().weight(1)]}
-              >
-                <NativeText color="#000000" style={{ typography: "labelMedium" }}>
-                  Yellow
-                </NativeText>
-              </Button>
+              <Text style={[styles.sheetSubLabel, { color: colors.textSecondary }]}>HIGHLIGHT COLOR</Text>
+              
+              <View style={styles.colorPaletteRow}>
+                {[
+                  { name: "Yellow", color: "#FFB300", textColor: "#000000", id: "yellow" },
+                  { name: "Green", color: "#4CAF50", textColor: "#FFFFFF", id: "green" },
+                  { name: "Blue", color: "#2196F3", textColor: "#FFFFFF", id: "blue" },
+                  { name: "Purple", color: "#9C27B0", textColor: "#FFFFFF", id: "purple" },
+                ].map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={({ pressed }) => [
+                      styles.colorChip,
+                      { backgroundColor: item.color, opacity: pressed ? 0.7 : 1 }
+                    ]}
+                    onPress={async () => {
+                      try {
+                        const updated = await saveSegmentAnnotation(activeSegmentId, item.id as "yellow" | "green" | "blue" | "purple", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
+                        setUserAnnotations(updated);
+                      } catch (err) {
+                        console.error("Error saving annotation:", err);
+                      } finally {
+                        setActiveSegmentId(null);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.colorChipText, { color: item.textColor }]}>{item.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
 
-              <Button
-                colors={{ containerColor: "#4CAF50" }}
-                onClick={async () => {
-                  const updated = await saveSegmentAnnotation(activeSegmentId, "green", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
-                  setUserAnnotations(updated);
-                  setActiveSegmentId(null);
-                }}
-                modifiers={[fillMaxWidth().weight(1)]}
-              >
-                <NativeText color="#FFFFFF" style={{ typography: "labelMedium" }}>
-                  Green
-                </NativeText>
-              </Button>
-
-              <Button
-                colors={{ containerColor: "#2196F3" }}
-                onClick={async () => {
-                  const updated = await saveSegmentAnnotation(activeSegmentId, "blue", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
-                  setUserAnnotations(updated);
-                  setActiveSegmentId(null);
-                }}
-                modifiers={[fillMaxWidth().weight(1)]}
-              >
-                <NativeText color="#FFFFFF" style={{ typography: "labelMedium" }}>
-                  Blue
-                </NativeText>
-              </Button>
-
-              <Button
-                colors={{ containerColor: "#9C27B0" }}
-                onClick={async () => {
-                  const updated = await saveSegmentAnnotation(activeSegmentId, "purple", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
-                  setUserAnnotations(updated);
-                  setActiveSegmentId(null);
-                }}
-                modifiers={[fillMaxWidth().weight(1)]}
-              >
-                <NativeText color="#FFFFFF" style={{ typography: "labelMedium" }}>
-                  Purple
-                </NativeText>
-              </Button>
-            </Row>
-
-            <Row
-              horizontalArrangement={{ spacedBy: 12 }}
-              modifiers={[fillMaxWidth(), padding(0, 0, 0, 12)]}
-            >
-              <Button
-                colors={{ containerColor: colors.primary }}
-                onClick={() => {
-                  const currentAnnotationNote = userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId] || "";
-                  setNoteText(currentAnnotationNote);
-                  setEditingNoteSegmentId(activeSegmentId);
-                  setActiveSegmentId(null);
-                }}
-                modifiers={[fillMaxWidth().weight(1)]}
-              >
-                <NativeText
-                  color={colors.surface}
-                  style={{ typography: "labelLarge" }}
-                >
-                  {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) ? "Edit Annotation Note" : "Add Annotation Note"}
-                </NativeText>
-              </Button>
-
-              {userAnnotations[activeSegmentId] && (
-                <Button
-                  colors={{ containerColor: "#FF3B30" }}
-                  onClick={async () => {
-                    const updated = await deleteSegmentAnnotation(activeSegmentId);
-                    setUserAnnotations(updated);
+              <View style={styles.sheetActionRow}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.sheetActionBtn,
+                    { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }
+                  ]}
+                  onPress={() => {
+                    const currentNote = userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId] || "";
+                    setNoteText(currentNote);
+                    setEditingNoteSegmentId(activeSegmentId);
                     setActiveSegmentId(null);
                   }}
-                  modifiers={[fillMaxWidth().weight(1)]}
                 >
-                  <NativeText
-                    color={colors.surface}
-                    style={{ typography: "labelLarge" }}
-                  >
-                    Remove Highlight
-                  </NativeText>
-                </Button>
-              )}
-            </Row>
+                  <Text style={[styles.sheetActionBtnText, { color: colors.textInverse }]}>
+                    {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) ? "Edit Note" : "Add Note"}
+                  </Text>
+                </Pressable>
 
-            <Row
-              horizontalArrangement={{ spacedBy: 12 }}
-              modifiers={[fillMaxWidth()]}
-            >
-              <Button
-                colors={{ containerColor: colors.surfaceVariant }}
-                onClick={async () => {
-                  try {
-                    const rootLine = data?.root_text?.[activeSegmentId] || "";
-                    const transLine = data?.translation_text?.[activeSegmentId] || "";
-                    let copyVal = "";
-                    if (rootLine) copyVal += `${stripHtml(rootLine)}\n`;
-                    if (transLine) copyVal += `${stripHtml(transLine)}`;
-                    await Clipboard.setStringAsync(copyVal.trim());
-                    Snackbar.show({
-                      text: "Segment copied to clipboard",
-                      duration: Snackbar.LENGTH_SHORT,
-                    });
-                  } catch (e) {
-                    console.error(e);
-                  }
-                  setActiveSegmentId(null);
-                }}
-                modifiers={[fillMaxWidth().weight(1)]}
-              >
-                <NativeText
-                  color={colors.textPrimary}
-                  style={{ typography: "labelLarge" }}
+                {userAnnotations[activeSegmentId] && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.sheetActionBtn,
+                      { backgroundColor: colors.error, opacity: pressed ? 0.8 : 1 }
+                    ]}
+                    onPress={async () => {
+                      try {
+                        const updated = await deleteSegmentAnnotation(activeSegmentId);
+                        setUserAnnotations(updated);
+                      } catch (err) {
+                        console.error("Error deleting annotation:", err);
+                      } finally {
+                        setActiveSegmentId(null);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.sheetActionBtnText, { color: "#FFFFFF" }]}>Remove Highlight</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <View style={{ marginTop: spacing.md }}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.sheetActionBtn,
+                    { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.8 : 1 }
+                  ]}
+                  onPress={async () => {
+                    try {
+                      const rootLine = data?.root_text?.[activeSegmentId] || "";
+                      const transLine = data?.translation_text?.[activeSegmentId] || "";
+                      let copyVal = "";
+                      if (rootLine) copyVal += `${stripHtml(rootLine)}\n`;
+                      if (transLine) copyVal += `${stripHtml(transLine)}`;
+                      await Clipboard.setStringAsync(copyVal.trim());
+                      Snackbar.show({
+                        text: "Segment copied to clipboard",
+                        duration: Snackbar.LENGTH_SHORT,
+                      });
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setActiveSegmentId(null);
+                    }
+                  }}
                 >
-                  Copy Segment Text
-                </NativeText>
-              </Button>
-            </Row>
-          </Column>
-        </ModalBottomSheet>
+                  <Text style={[styles.sheetActionBtnText, { color: colors.textPrimary }]}>Copy Segment Text</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
       )}
 
       {editingNoteSegmentId && (
@@ -1517,6 +1464,66 @@ const styles = StyleSheet.create({
   suttaNoteText: {
     lineHeight: 19,
     fontStyle: "italic",
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheetContent: {
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.xl,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  sheetSubLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  commentText: {
+    lineHeight: 22,
+  },
+  colorPaletteRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  colorChip: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  colorChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  sheetActionRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  sheetActionBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetActionBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
 

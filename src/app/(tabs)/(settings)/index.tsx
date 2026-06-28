@@ -23,7 +23,10 @@ import {
   Alert,
   Switch,
   Modal,
+  Platform,
 } from "react-native";
+import { readLogs, clearLogs, getLogFilePath } from "@/services/LoggerService";
+import * as Clipboard from "expo-clipboard";
 import * as Notifications from "expo-notifications";
 import * as WebBrowser from "expo-web-browser";
 
@@ -52,6 +55,10 @@ export default function SettingsScreen() {
   const [tempReminderHour, setTempReminderHour] = useState(9);
   const [tempReminderMinute, setTempReminderMinute] = useState(0);
   const [tempReminderFrequency, setTempReminderFrequency] = useState<"once" | "daily" | "weekly">("daily");
+
+  // Log Modal state
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [logContent, setLogContent] = useState("");
 
   const appVersion = Constants.expoConfig?.version || "1.0.0";
   const buildNumber = Constants.expoConfig?.android?.versionCode || 1;
@@ -379,6 +386,15 @@ export default function SettingsScreen() {
           label: "Support the Project",
           onPress: () => Linking.openURL("https://saddhamma.online/support.html"),
         })}
+        {renderSettingRow({
+          icon: "document-text-outline",
+          label: "Diagnostic Crash Logs",
+          onPress: async () => {
+            const logs = await readLogs();
+            setLogContent(logs);
+            setShowLogModal(true);
+          },
+        })}
       </View>
 
       {/* Reminder Config Modal */}
@@ -505,6 +521,50 @@ export default function SettingsScreen() {
                 <Text style={[styles.modalBtnText, { color: colors.textInverse }]}>
                   Save Settings
                 </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Diagnostic Logs Modal */}
+      <Modal
+        visible={showLogModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLogModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, maxHeight: "80%" }]}>
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              App Diagnostic Logs
+            </Text>
+            <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: spacing.md }}>
+              Path: {getLogFilePath()}
+            </Text>
+            
+            <ScrollView style={{ width: "100%", maxHeight: 300, backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md }}>
+              <Text style={{ fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", color: colors.textPrimary }}>
+                {logContent}
+              </Text>
+            </ScrollView>
+
+            <View style={{ flexDirection: "row", gap: spacing.md, width: "100%" }}>
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.surfaceVariant }]}
+                onPress={async () => {
+                  await Clipboard.setStringAsync(`Path: ${getLogFilePath()}\n\nLogs:\n${logContent}`);
+                  Alert.alert("Copied", "Diagnostic logs copied to clipboard.");
+                }}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.textPrimary }]}>Copy Logs</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setShowLogModal(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.textInverse }]}>Close</Text>
               </Pressable>
             </View>
           </View>

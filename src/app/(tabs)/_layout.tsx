@@ -2,6 +2,8 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/theme";
 
+export { CustomErrorBoundary as ErrorBoundary } from "@/components";
+
 export default function TabsLayout() {
   const { colors } = useTheme();
 
