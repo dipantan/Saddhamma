@@ -158,7 +158,7 @@ export default function MeditationTimerScreen() {
             const elapsed = totalSeconds - nextTimeLeft;
             // Halfway Bell
             if (halfwayBell && elapsed === Math.floor(totalSeconds / 2)) {
-              Vibration.vibrate(200);
+              Vibration.vibrate([0, 250, 150, 250]);
             }
             // Interval Bell
             if (intervalMinutes > 0 && elapsed % (intervalMinutes * 60) === 0) {
