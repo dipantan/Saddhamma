@@ -260,7 +260,7 @@
             
             <div class="cta-group">
                 <a id="download-apk-btn" href="https://github.com/dipantan/Saddhamma/releases/latest" class="btn btn-primary">
-                    Download Android APK
+                    Download App
                 </a>
                 <a href="https://github.com/dipantan/Saddhamma" class="btn btn-secondary">
                     View Source Code
@@ -324,7 +324,6 @@
                     const btn = document.getElementById('download-apk-btn');
                     if (btn && apkAsset) {
                         btn.href = apkAsset.browser_download_url;
-                        btn.textContent = `Download Android APK (${data.tag_name || 'Latest'})`;
                     }
                 }
             })
