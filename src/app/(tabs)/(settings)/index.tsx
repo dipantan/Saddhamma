@@ -283,31 +283,6 @@ export default function SettingsScreen() {
         })}
       </View>
 
-      <SectionHeader title="Data & Search" subtitle="Manage offline search index" />
-      <View style={styles.section}>
-        <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            {status}
-          </Text>
-          {isIndexing && (
-            <View style={styles.progressWrapper}>
-              <View style={[styles.progressBar, { backgroundColor: colors.divider }]}>
-                <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${progress * 100}%` }]} />
-              </View>
-              <Text style={[styles.progressPercent, { color: colors.textTertiary }]}>
-                {Math.round(progress * 100)}%
-              </Text>
-            </View>
-          )}
-        </View>
-        {renderSettingRow({
-          icon: "search",
-          label: "Rebuild Search Index",
-          onPress: handleStartIndexing,
-          disabled: isIndexing,
-        })}
-      </View>
-
       <SectionHeader 
         title="Reader Preferences" 
         subtitle="Default preferences for sutta reading screen" 
