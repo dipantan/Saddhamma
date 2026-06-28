@@ -8,8 +8,10 @@ import {
   toggleBookmark,
   getUserNotes,
   saveUserNote,
-  getUserHighlights,
-  toggleUserHighlight,
+  getUserAnnotations,
+  saveSegmentAnnotation,
+  deleteSegmentAnnotation,
+  SegmentAnnotation,
   addReadingLog,
 } from "@/services/DataService";
 import { radius, spacing, useTheme } from "@/theme";
@@ -147,9 +149,9 @@ export default function ReaderScreen() {
   const showPali = displayMode === "pli" || displayMode === "bilingual";
   const showTranslation = displayMode === "en" || displayMode === "bilingual";
 
-  // User Notes & Highlights
+  // User Notes & Annotations
   const [userNotes, setUserNotes] = useState<Record<string, string>>({});
-  const [userHighlights, setUserHighlights] = useState<string[]>([]);
+  const [userAnnotations, setUserAnnotations] = useState<Record<string, SegmentAnnotation>>({});
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [editingNoteSegmentId, setEditingNoteSegmentId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
@@ -204,12 +206,12 @@ export default function ReaderScreen() {
           console.error("Error logging reading history:", err)
         );
 
-        // Load user notes and highlights
+        // Load user notes and annotations
         const notes = await getUserNotes();
-        const highlights = await getUserHighlights();
+        const annotations = await getUserAnnotations();
         if (isMounted) {
           setUserNotes(notes);
-          setUserHighlights(highlights);
+          setUserAnnotations(annotations);
         }
       }
     } catch (err) {
@@ -371,14 +373,13 @@ export default function ReaderScreen() {
         showSegments={showSegments}
         showComments={showComments}
         onCommentPress={setSelectedComment}
-        isHighlighted={userHighlights.includes(segId)}
-        isSuttaHighlighted={userHighlights.includes(uid)}
+        annotation={userAnnotations[segId]}
         userNote={userNotes[segId]}
         onSegmentPress={setActiveSegmentId}
         authorUid={data?.author_uid}
       />
     ),
-    [data, colors, fontSize, showPali, showTranslation, showSegments, showComments, hasTranslation, userHighlights, userNotes, uid],
+    [data, colors, fontSize, showPali, showTranslation, showSegments, showComments, hasTranslation, userAnnotations, userNotes],
   );
 
   if (loading) return <LoadingState message="Loading Dhamma…" />;
@@ -620,30 +621,6 @@ export default function ReaderScreen() {
 
                       <HorizontalDivider thickness={1} color={colors.divider} />
 
-                      <DropdownMenuItem onClick={async () => {
-                        const highlighted = await toggleUserHighlight(uid);
-                        setUserHighlights(prev =>
-                          highlighted ? [...prev, uid] : prev.filter(h => h !== uid)
-                        );
-                        setMenuExpanded(false);
-                      }}>
-                        <DropdownMenuItem.LeadingIcon>
-                          <Ionicons
-                            name={userHighlights.includes(uid) ? "star" : "star-outline"}
-                            size={20}
-                            color={userHighlights.includes(uid) ? "#FFD700" : colors.textPrimary}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            {userHighlights.includes(uid) ? "Remove Highlight" : "Highlight Sutta"}
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
                       <DropdownMenuItem onClick={() => {
                         setNoteText(userNotes[uid] || "");
                         setEditingNoteSegmentId(uid);
@@ -839,38 +816,89 @@ export default function ReaderScreen() {
             <NativeText
               color={colors.textPrimary}
               style={{ typography: "titleLarge" }}
-              modifiers={[padding(0, 0, 16, 0)]}
+              modifiers={[padding(0, 0, 12, 0)]}
             >
-              Segment Action
+              Highlight & Annotate Text
+            </NativeText>
+
+            <NativeText
+              color={colors.textSecondary}
+              style={{ typography: "labelSmall" }}
+              modifiers={[padding(0, 0, 8, 0)]}
+            >
+              HIGHLIGHT COLOR
             </NativeText>
             
             <Row
-              horizontalArrangement={{ spacedBy: 12 }}
+              horizontalArrangement={{ spacedBy: 8 }}
               modifiers={[fillMaxWidth(), padding(0, 0, 0, 16)]}
             >
               <Button
-                colors={{ containerColor: colors.primary }}
+                colors={{ containerColor: "#FFB300" }}
                 onClick={async () => {
-                  const highlighted = await toggleUserHighlight(activeSegmentId);
-                  setUserHighlights(prev =>
-                    highlighted ? [...prev, activeSegmentId] : prev.filter(h => h !== activeSegmentId)
-                  );
+                  const updated = await saveSegmentAnnotation(activeSegmentId, "yellow", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
+                  setUserAnnotations(updated);
                   setActiveSegmentId(null);
                 }}
                 modifiers={[fillMaxWidth().weight(1)]}
               >
-                <NativeText
-                  color={colors.surface}
-                  style={{ typography: "labelLarge" }}
-                >
-                  {userHighlights.includes(activeSegmentId) ? "Unhighlight" : "Highlight"}
+                <NativeText color="#000000" style={{ typography: "labelMedium" }}>
+                  Yellow
                 </NativeText>
               </Button>
 
               <Button
+                colors={{ containerColor: "#4CAF50" }}
+                onClick={async () => {
+                  const updated = await saveSegmentAnnotation(activeSegmentId, "green", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
+                  setUserAnnotations(updated);
+                  setActiveSegmentId(null);
+                }}
+                modifiers={[fillMaxWidth().weight(1)]}
+              >
+                <NativeText color="#FFFFFF" style={{ typography: "labelMedium" }}>
+                  Green
+                </NativeText>
+              </Button>
+
+              <Button
+                colors={{ containerColor: "#2196F3" }}
+                onClick={async () => {
+                  const updated = await saveSegmentAnnotation(activeSegmentId, "blue", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
+                  setUserAnnotations(updated);
+                  setActiveSegmentId(null);
+                }}
+                modifiers={[fillMaxWidth().weight(1)]}
+              >
+                <NativeText color="#FFFFFF" style={{ typography: "labelMedium" }}>
+                  Blue
+                </NativeText>
+              </Button>
+
+              <Button
+                colors={{ containerColor: "#9C27B0" }}
+                onClick={async () => {
+                  const updated = await saveSegmentAnnotation(activeSegmentId, "purple", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
+                  setUserAnnotations(updated);
+                  setActiveSegmentId(null);
+                }}
+                modifiers={[fillMaxWidth().weight(1)]}
+              >
+                <NativeText color="#FFFFFF" style={{ typography: "labelMedium" }}>
+                  Purple
+                </NativeText>
+              </Button>
+            </Row>
+
+            <Row
+              horizontalArrangement={{ spacedBy: 12 }}
+              modifiers={[fillMaxWidth(), padding(0, 0, 0, 12)]}
+            >
+              <Button
                 colors={{ containerColor: colors.primary }}
                 onClick={() => {
-                  setNoteText(userNotes[activeSegmentId] || "");
+                  const currentAnnotationNote = userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId] || "";
+                  setNoteText(currentAnnotationNote);
                   setEditingNoteSegmentId(activeSegmentId);
                   setActiveSegmentId(null);
                 }}
@@ -880,9 +908,28 @@ export default function ReaderScreen() {
                   color={colors.surface}
                   style={{ typography: "labelLarge" }}
                 >
-                  {userNotes[activeSegmentId] ? "Edit Note" : "Add Note"}
+                  {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) ? "Edit Annotation Note" : "Add Annotation Note"}
                 </NativeText>
               </Button>
+
+              {userAnnotations[activeSegmentId] && (
+                <Button
+                  colors={{ containerColor: "#FF3B30" }}
+                  onClick={async () => {
+                    const updated = await deleteSegmentAnnotation(activeSegmentId);
+                    setUserAnnotations(updated);
+                    setActiveSegmentId(null);
+                  }}
+                  modifiers={[fillMaxWidth().weight(1)]}
+                >
+                  <NativeText
+                    color={colors.surface}
+                    style={{ typography: "labelLarge" }}
+                  >
+                    Remove Highlight
+                  </NativeText>
+                </Button>
+              )}
             </Row>
 
             <Row
@@ -914,32 +961,9 @@ export default function ReaderScreen() {
                   color={colors.textPrimary}
                   style={{ typography: "labelLarge" }}
                 >
-                  Copy Text
+                  Copy Segment Text
                 </NativeText>
               </Button>
-
-              {userNotes[activeSegmentId] && (
-                <Button
-                  colors={{ containerColor: "#FF3B30" }}
-                  onClick={async () => {
-                    await saveUserNote(activeSegmentId, "");
-                    setUserNotes(prev => {
-                      const updated = { ...prev };
-                      delete updated[activeSegmentId];
-                      return updated;
-                    });
-                    setActiveSegmentId(null);
-                  }}
-                  modifiers={[fillMaxWidth().weight(1)]}
-                >
-                  <NativeText
-                    color={colors.surface}
-                    style={{ typography: "labelLarge" }}
-                  >
-                    Delete Note
-                  </NativeText>
-                </Button>
-              )}
             </Row>
           </Column>
         </ModalBottomSheet>
@@ -994,6 +1018,14 @@ export default function ReaderScreen() {
                       }
                       return updated;
                     });
+                    if (userAnnotations[editingNoteSegmentId]) {
+                      const updatedAnno = await saveSegmentAnnotation(
+                        editingNoteSegmentId,
+                        userAnnotations[editingNoteSegmentId].color,
+                        noteText
+                      );
+                      setUserAnnotations(updatedAnno);
+                    }
                     setEditingNoteSegmentId(null);
                   }}
                 >
@@ -1020,8 +1052,7 @@ interface SegmentItemProps {
   showSegments: boolean;
   showComments: boolean;
   onCommentPress: (comment: string) => void;
-  isHighlighted: boolean;
-  isSuttaHighlighted: boolean;
+  annotation?: SegmentAnnotation;
   userNote?: string;
   onSegmentPress: (segId: string) => void;
   authorUid?: string;
@@ -1040,8 +1071,7 @@ const SegmentItem = React.memo(
     showSegments,
     showComments,
     onCommentPress,
-    isHighlighted,
-    isSuttaHighlighted,
+    annotation,
     userNote,
     onSegmentPress,
     authorUid,
@@ -1085,13 +1115,7 @@ const SegmentItem = React.memo(
         <View 
           style={styles.headerSegment}
         >
-          <Text selectable style={{ textAlign: "center", width: "100%" }}>
-            {isTitle && isSuttaHighlighted && (
-              <Text style={{ textAlign: "center" }}>
-                <Ionicons name="star" size={18} color="#FFD700" />
-                {"  "}
-              </Text>
-            )}
+          <Text style={{ textAlign: "center", width: "100%" }}>
             {isCollection && displayTrans && (
               <Text
                 style={[
@@ -1171,7 +1195,31 @@ const SegmentItem = React.memo(
     }
 
     const isDuplicate = isDuplicateText(root, displayTrans);
-    const highlightBgColor = colors.background === "#121212" ? "#382705" : "#FFF7E6";
+    const isDark = colors.background === "#121212" || colors.background === "#000000";
+    
+    const getHighlightBg = (colorName?: string) => {
+      switch (colorName) {
+        case "green": return isDark ? "#0D3316" : "#E8F5E9";
+        case "blue": return isDark ? "#0A243A" : "#E3F2FD";
+        case "purple": return isDark ? "#280A33" : "#F3E5F5";
+        case "yellow":
+        default: return isDark ? "#382705" : "#FFF8E1";
+      }
+    };
+
+    const getHighlightAccent = (colorName?: string) => {
+      switch (colorName) {
+        case "green": return "#4CAF50";
+        case "blue": return "#2196F3";
+        case "purple": return "#9C27B0";
+        case "yellow":
+        default: return "#FFB300";
+      }
+    };
+
+    const highlightBg = annotation ? getHighlightBg(annotation.color) : undefined;
+    const activeNoteText = annotation?.note || userNote;
+    const cardAccentColor = annotation ? getHighlightAccent(annotation.color) : colors.primary;
 
     return (
       <Pressable
@@ -1179,7 +1227,7 @@ const SegmentItem = React.memo(
         style={({ pressed }) => [
           styles.bodySegment,
           {
-            backgroundColor: isHighlighted ? highlightBgColor : (pressed ? colors.surfaceVariant : "transparent"),
+            backgroundColor: highlightBg ? highlightBg : (pressed ? colors.surfaceVariant : "transparent"),
           }
         ]}
       >
@@ -1240,14 +1288,14 @@ const SegmentItem = React.memo(
             )}
           </Text>
 
-          {userNote && (
-            <View style={[styles.userNoteContainer, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30" }]}>
+          {activeNoteText && (
+            <View style={[styles.userNoteContainer, { backgroundColor: cardAccentColor + "15", borderColor: cardAccentColor + "40" }]}>
               <View style={styles.userNoteHeader}>
-                <Ionicons name="create-outline" size={14} color={colors.primary} style={{ marginRight: 6 }} />
-                <Text style={[styles.userNoteHeaderText, { color: colors.primary }]}>My Note</Text>
+                <Ionicons name="create-outline" size={14} color={cardAccentColor} style={{ marginRight: 6 }} />
+                <Text style={[styles.userNoteHeaderText, { color: cardAccentColor }]}>Annotation Note</Text>
               </View>
               <Text style={[styles.userNoteText, { color: colors.textPrimary, fontSize: Math.max(12, fontSize - 2) }]}>
-                {userNote}
+                {activeNoteText}
               </Text>
             </View>
           )}

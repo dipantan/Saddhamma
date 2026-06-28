@@ -9,9 +9,17 @@ const SETTINGS_PATH = `${Paths.document.uri}reader_settings.json`;
 const BOOKMARKS_PATH = `${Paths.document.uri}bookmarks.json`;
 const NOTES_PATH = `${Paths.document.uri}user_notes.json`;
 const HIGHLIGHTS_PATH = `${Paths.document.uri}user_highlights.json`;
+const ANNOTATIONS_PATH = `${Paths.document.uri}user_annotations.json`;
 const MEDITATION_LOGS_PATH = `${Paths.document.uri}meditation_logs.json`;
 const GRADUAL_TRAINING_PATH = `${Paths.document.uri}gradual_training.json`;
 const READING_LOGS_PATH = `${Paths.document.uri}reading_history.json`;
+
+export interface SegmentAnnotation {
+  segId: string;
+  color: "yellow" | "green" | "blue" | "purple";
+  note?: string;
+  updatedAt: number;
+}
 
 export interface MeditationLog {
   id: string;
@@ -1518,6 +1526,71 @@ export async function saveUserNote(uid: string, noteText: string): Promise<void>
     await file.write(JSON.stringify(notes));
   } catch (error) {
     console.error("Error saving user note:", error);
+  }
+}
+
+export async function getUserAnnotations(): Promise<Record<string, SegmentAnnotation>> {
+  try {
+    const file = new ExpoFile(ANNOTATIONS_PATH);
+    if (await file.exists) {
+      const content = await file.text();
+      return JSON.parse(content);
+    }
+    // Backward compatibility check for old user_highlights.json
+    const oldFile = new ExpoFile(HIGHLIGHTS_PATH);
+    if (await oldFile.exists) {
+      const content = await oldFile.text();
+      const parsed = JSON.parse(content);
+      const migrated: Record<string, SegmentAnnotation> = {};
+      if (Array.isArray(parsed)) {
+        parsed.forEach((id: string) => {
+          migrated[id] = { segId: id, color: "yellow", updatedAt: Date.now() };
+        });
+      } else if (typeof parsed === "object" && parsed !== null) {
+        Object.assign(migrated, parsed);
+      }
+      await file.write(JSON.stringify(migrated));
+      return migrated;
+    }
+    return {};
+  } catch (error) {
+    console.error("Error loading user annotations:", error);
+    return {};
+  }
+}
+
+export async function saveSegmentAnnotation(
+  segId: string,
+  color: "yellow" | "green" | "blue" | "purple",
+  note?: string
+): Promise<Record<string, SegmentAnnotation>> {
+  try {
+    const annotations = await getUserAnnotations();
+    annotations[segId] = {
+      segId,
+      color,
+      note: note?.trim() || undefined,
+      updatedAt: Date.now(),
+    };
+    const file = new ExpoFile(ANNOTATIONS_PATH);
+    await file.write(JSON.stringify(annotations));
+    return annotations;
+  } catch (error) {
+    console.error("Error saving segment annotation:", error);
+    return {};
+  }
+}
+
+export async function deleteSegmentAnnotation(segId: string): Promise<Record<string, SegmentAnnotation>> {
+  try {
+    const annotations = await getUserAnnotations();
+    delete annotations[segId];
+    const file = new ExpoFile(ANNOTATIONS_PATH);
+    await file.write(JSON.stringify(annotations));
+    return annotations;
+  } catch (error) {
+    console.error("Error deleting segment annotation:", error);
+    return {};
   }
 }
 
