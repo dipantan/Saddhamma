@@ -259,8 +259,8 @@
             <p class="tagline">A high-performance, offline-first reader for the Pāli Canon. Carry the Buddha's wisdom in your pocket.</p>
             
             <div class="cta-group">
-                <a href="https://github.com/dipantan/Saddhamma/releases/latest/download/Saddhamma-v1.0.0.apk" class="btn btn-primary">
-                    Download APK (v1.0.0)
+                <a id="download-apk-btn" href="https://github.com/dipantan/Saddhamma/releases/latest" class="btn btn-primary">
+                    Download Android APK
                 </a>
                 <a href="https://github.com/dipantan/Saddhamma" class="btn btn-secondary">
                     View Source Code
@@ -313,5 +313,22 @@
             </div>
         </footer>
     </div>
+
+    <script>
+        // Dynamically fetch the latest release info from GitHub API
+        fetch('https://api.github.com/repos/dipantan/Saddhamma/releases/latest')
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.assets && data.assets.length > 0) {
+                    const apkAsset = data.assets.find(a => a.name.endsWith('.apk'));
+                    const btn = document.getElementById('download-apk-btn');
+                    if (btn && apkAsset) {
+                        btn.href = apkAsset.browser_download_url;
+                        btn.textContent = `Download Android APK (${data.tag_name || 'Latest'})`;
+                    }
+                }
+            })
+            .catch(err => console.log('Could not load dynamic release tag:', err));
+    </script>
 </body>
 </html>

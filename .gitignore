@@ -47,3 +47,8 @@ skills-lock.json
 llms-full.txt
 .vscode
 expo_offline_architecture.md
+
+# build outputs and release downloads
+*.apk
+*.aab
+temp_release/

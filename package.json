@@ -51,7 +51,8 @@
     "lint": "expo lint",
     "build:preview": "eas build --profile preview --platform android",
     "build:preview:local": "eas build --profile preview --platform android --local",
-    "update:preview": "eas update --channel preview --message"
+    "update:preview": "eas update --channel preview --message",
+    "release": "node ./scripts/publish-release.js"
   },
   "private": true
 }
