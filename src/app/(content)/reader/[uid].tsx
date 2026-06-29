@@ -27,6 +27,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -135,6 +136,7 @@ export default function ReaderScreen() {
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [editingNoteSegmentId, setEditingNoteSegmentId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [isSuttaNoteExpanded, setIsSuttaNoteExpanded] = useState(false);
 
   const resolvedRootLang = useMemo(() => {
     if (data?.root_lang) return data.root_lang;
@@ -322,6 +324,60 @@ export default function ReaderScreen() {
     }
   };
 
+  const handleShareEntireSutta = async () => {
+    if (!data) return;
+    try {
+      let textToShare = "";
+
+      const getBestTitle = (textMap: any) => {
+        if (!textMap) return "";
+        const keys = Object.keys(textMap);
+        if (keys.length === 0) return "";
+        const suttaNameKey = keys.find((k) => k.endsWith(":0.2"));
+        const firstKey = keys[0];
+        return textMap[suttaNameKey || firstKey] || "";
+      };
+
+      const transTitle = getBestTitle(data?.translation_text);
+      const rootTitle = getBestTitle(data?.root_text);
+      const acronym = data?.acronym || uid?.toUpperCase();
+
+      if (acronym) textToShare += `${acronym}\n`;
+      if (transTitle) textToShare += `${stripHtml(transTitle)}\n`;
+      if (rootTitle) textToShare += `${stripHtml(rootTitle)}\n`;
+      textToShare += "\n";
+
+      sortedSegments.forEach((segId) => {
+        const isHeader = segId.includes(":legacy:")
+          ? (segId.split(":")[2] === "division" || segId.split(":")[2] === "h1" || segId.split(":")[2] === "h2" || segId.split(":")[2] === "h3")
+          : segId.split(":")[1]?.startsWith("0.");
+
+        if (isHeader) return;
+
+        const rootLine = data?.root_text?.[segId];
+        const transLine = data?.translation_text?.[segId];
+
+        if (showPali && rootLine) {
+          textToShare += `${stripHtml(rootLine)}\n`;
+        }
+        if (transLine) {
+          textToShare += `${stripHtml(transLine)}\n`;
+        }
+        if ((showPali && rootLine) || transLine) {
+          textToShare += "\n";
+        }
+      });
+
+      setMenuExpanded(false);
+      await Share.share({
+        title: `${acronym || uid}: ${stripHtml(transTitle || "")}`,
+        message: textToShare.trim(),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const hasTranslation = useMemo(() => {
     if (!data || !data.translation_text) return false;
     return Object.keys(data.translation_text).length > 0;
@@ -481,13 +537,22 @@ export default function ReaderScreen() {
                 </Text>
               </View>
             )}
-            {userNotes[uid] && (
+            {showComments && userNotes[uid] && (
               <View style={[styles.suttaNoteCard, { backgroundColor: colors.primary + "0A", borderColor: colors.primary + "30" }]}>
                 <View style={styles.suttaNoteHeader}>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Pressable
+                    onPress={() => setIsSuttaNoteExpanded(!isSuttaNoteExpanded)}
+                    style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
                     <Ionicons name="journal-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-                    <Text style={[styles.suttaNoteHeaderTitle, { color: colors.primary }]}>Sutta Reflection Note</Text>
-                  </View>
+                    <Text style={[styles.suttaNoteHeaderTitle, { color: colors.primary, marginRight: 6 }]}>Sutta Reflection Note</Text>
+                    <Ionicons
+                      name={isSuttaNoteExpanded ? "chevron-up" : "chevron-down"}
+                      size={16}
+                      color={colors.primary}
+                    />
+                  </Pressable>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
                     <Pressable
                       onPress={() => {
@@ -515,9 +580,11 @@ export default function ReaderScreen() {
                     </Pressable>
                   </View>
                 </View>
-                <Text style={[styles.suttaNoteText, { color: colors.textPrimary, fontSize: Math.max(13, fontSize - 4) }]}>
-                  {userNotes[uid]}
-                </Text>
+                {isSuttaNoteExpanded && (
+                  <Text style={[styles.suttaNoteText, { color: colors.textPrimary, fontSize: Math.max(13, fontSize - 4), marginTop: spacing.xs }]}>
+                    {userNotes[uid]}
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -558,9 +625,9 @@ export default function ReaderScreen() {
           onRequestClose={() => setActiveSegmentId(null)}
         >
           <Pressable style={styles.sheetOverlay} onPress={() => setActiveSegmentId(null)}>
-            <Pressable style={[styles.sheetContent, { backgroundColor: colors.surface }]}>
+            <Pressable style={[styles.sheetContent, { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom + spacing.md, spacing.xl) }]}>
               <View style={styles.sheetHeader}>
-                <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Highlight & Annotate Text</Text>
+                <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Segment Actions</Text>
                 <Pressable onPress={() => setActiveSegmentId(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   <Ionicons name="close" size={24} color={colors.textSecondary} />
                 </Pressable>
@@ -574,137 +641,155 @@ export default function ReaderScreen() {
                   { name: "Green", color: "#4CAF50", textColor: "#FFFFFF", id: "green" },
                   { name: "Blue", color: "#2196F3", textColor: "#FFFFFF", id: "blue" },
                   { name: "Purple", color: "#9C27B0", textColor: "#FFFFFF", id: "purple" },
-                ].map((item) => (
-                  <Pressable
-                    key={item.id}
-                    style={({ pressed }) => [
-                      styles.colorChip,
-                      { backgroundColor: item.color, opacity: pressed ? 0.7 : 1 }
-                    ]}
-                    onPress={async () => {
-                      try {
-                        const updated = await saveSegmentAnnotation(activeSegmentId, item.id as "yellow" | "green" | "blue" | "purple", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
-                        setUserAnnotations(updated);
-                      } catch (err) {
-                        console.error("Error saving annotation:", err);
-                      } finally {
-                        setActiveSegmentId(null);
-                      }
-                    }}
-                  >
-                    <Text style={[styles.colorChipText, { color: item.textColor }]}>{item.name}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View style={[styles.sheetActionRow, { flexWrap: "wrap", gap: spacing.sm }]}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.sheetActionBtn,
-                    { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1, flex: 1, minWidth: 120 }
-                  ]}
-                  onPress={() => {
-                    const currentNote = userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId] || "";
-                    setNoteText(currentNote);
-                    setEditingNoteSegmentId(activeSegmentId);
-                    setActiveSegmentId(null);
-                  }}
-                >
-                  <Text style={[styles.sheetActionBtnText, { color: colors.textInverse }]}>
-                    {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) ? "Edit Note" : "Add Note"}
-                  </Text>
-                </Pressable>
-
-                {userAnnotations[activeSegmentId] && (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.sheetActionBtn,
-                      { backgroundColor: colors.error, opacity: pressed ? 0.8 : 1, flex: 1, minWidth: 140 }
-                    ]}
-                    onPress={async () => {
-                      try {
-                        const updated = await deleteSegmentAnnotation(activeSegmentId);
-                        setUserAnnotations(updated);
-                        Snackbar.show({
-                          text: "Highlight removed",
-                          duration: Snackbar.LENGTH_SHORT,
-                        });
-                      } catch (err) {
-                        console.error("Error deleting annotation:", err);
-                      } finally {
-                        setActiveSegmentId(null);
-                      }
-                    }}
-                  >
-                    <Text style={[styles.sheetActionBtnText, { color: "#FFFFFF" }]}>Remove Highlight</Text>
-                  </Pressable>
-                )}
-
-                {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) && (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.sheetActionBtn,
-                      { backgroundColor: colors.error, opacity: pressed ? 0.8 : 1, flex: 1, minWidth: 120 }
-                    ]}
-                    onPress={async () => {
-                      try {
-                        await saveUserNote(activeSegmentId, "");
-                        setUserNotes(prev => {
-                          const updated = { ...prev };
-                          delete updated[activeSegmentId];
-                          return updated;
-                        });
-                        if (userAnnotations[activeSegmentId]) {
-                          const updatedAnno = await saveSegmentAnnotation(
-                            activeSegmentId,
-                            userAnnotations[activeSegmentId].color,
-                            ""
-                          );
-                          setUserAnnotations(updatedAnno);
+                ].map((item) => {
+                  const isSelected = userAnnotations[activeSegmentId]?.color === item.id;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      style={({ pressed }) => [
+                        styles.colorChip,
+                        {
+                          backgroundColor: item.color,
+                          opacity: pressed ? 0.7 : 1,
+                          flexDirection: "row",
+                          gap: 4,
+                          borderWidth: isSelected ? 2 : 0,
+                          borderColor: colors.textPrimary,
                         }
-                        Snackbar.show({
-                          text: "Note deleted",
-                          duration: Snackbar.LENGTH_SHORT,
-                        });
-                      } catch (err) {
-                        console.error("Error deleting note:", err);
-                      } finally {
+                      ]}
+                      onPress={async () => {
+                        try {
+                          const updated = await saveSegmentAnnotation(activeSegmentId, item.id as "yellow" | "green" | "blue" | "purple", userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]);
+                          setUserAnnotations(updated);
+                        } catch (err) {
+                          console.error("Error saving annotation:", err);
+                        } finally {
+                          setActiveSegmentId(null);
+                        }
+                      }}
+                    >
+                      {isSelected && <Ionicons name="checkmark" size={14} color={item.textColor} />}
+                      <Text style={[styles.colorChipText, { color: item.textColor }]}>{item.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.sheetSubLabel, { color: colors.textSecondary, marginTop: spacing.sm }]}>ACTIONS</Text>
+
+              <View style={{ gap: spacing.sm }}>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.sheetActionBtn,
+                      { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.8 : 1, flex: 1, flexDirection: "row", gap: 8, justifyContent: "center" }
+                    ]}
+                    onPress={async () => {
+                      try {
+                        const rootLine = data?.root_text?.[activeSegmentId] || "";
+                        const transLine = data?.translation_text?.[activeSegmentId] || "";
+                        let shareVal = "";
+                        if (rootLine) shareVal += `${stripHtml(rootLine)}\n`;
+                        if (transLine) shareVal += `${stripHtml(transLine)}`;
                         setActiveSegmentId(null);
+                        await Share.share({
+                          message: shareVal.trim(),
+                        });
+                      } catch (e) {
+                        console.error(e);
                       }
                     }}
                   >
-                    <Text style={[styles.sheetActionBtnText, { color: "#FFFFFF" }]}>Delete Note</Text>
+                    <Ionicons name="share-social-outline" size={18} color={colors.textPrimary} />
+                    <Text style={[styles.sheetActionBtnText, { color: colors.textPrimary }]}>Share Segment</Text>
                   </Pressable>
-                )}
-              </View>
 
-              <View style={{ marginTop: spacing.md }}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.sheetActionBtn,
-                    { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.8 : 1 }
-                  ]}
-                  onPress={async () => {
-                    try {
-                      const rootLine = data?.root_text?.[activeSegmentId] || "";
-                      const transLine = data?.translation_text?.[activeSegmentId] || "";
-                      let copyVal = "";
-                      if (rootLine) copyVal += `${stripHtml(rootLine)}\n`;
-                      if (transLine) copyVal += `${stripHtml(transLine)}`;
-                      await Clipboard.setStringAsync(copyVal.trim());
-                      Snackbar.show({
-                        text: "Segment copied to clipboard",
-                        duration: Snackbar.LENGTH_SHORT,
-                      });
-                    } catch (e) {
-                      console.error(e);
-                    } finally {
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.sheetActionBtn,
+                      { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1, flex: 1, flexDirection: "row", gap: 8, justifyContent: "center" }
+                    ]}
+                    onPress={() => {
+                      const currentNote = userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId] || "";
+                      setNoteText(currentNote);
+                      setEditingNoteSegmentId(activeSegmentId);
                       setActiveSegmentId(null);
-                    }
-                  }}
-                >
-                  <Text style={[styles.sheetActionBtnText, { color: colors.textPrimary }]}>Copy Segment Text</Text>
-                </Pressable>
+                    }}
+                  >
+                    <Ionicons name="create-outline" size={18} color={colors.textInverse} />
+                    <Text style={[styles.sheetActionBtnText, { color: colors.textInverse }]}>
+                      {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) ? "Edit Note" : "Add Note"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {(userAnnotations[activeSegmentId] || userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) && (
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                    {userAnnotations[activeSegmentId] && (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.sheetActionBtn,
+                          { backgroundColor: colors.error + "1A", borderWidth: 1, borderColor: colors.error + "40", opacity: pressed ? 0.8 : 1, flex: 1, flexDirection: "row", gap: 6, justifyContent: "center" }
+                        ]}
+                        onPress={async () => {
+                          try {
+                            const updated = await deleteSegmentAnnotation(activeSegmentId);
+                            setUserAnnotations(updated);
+                            Snackbar.show({
+                              text: "Highlight removed",
+                              duration: Snackbar.LENGTH_SHORT,
+                            });
+                          } catch (err) {
+                            console.error("Error deleting annotation:", err);
+                          } finally {
+                            setActiveSegmentId(null);
+                          }
+                        }}
+                      >
+                        <Ionicons name="color-wand-outline" size={18} color={colors.error} />
+                        <Text style={[styles.sheetActionBtnText, { color: colors.error }]}>Remove Highlight</Text>
+                      </Pressable>
+                    )}
+
+                    {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) && (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.sheetActionBtn,
+                          { backgroundColor: colors.error + "1A", borderWidth: 1, borderColor: colors.error + "40", opacity: pressed ? 0.8 : 1, flex: 1, flexDirection: "row", gap: 6, justifyContent: "center" }
+                        ]}
+                        onPress={async () => {
+                          try {
+                            await saveUserNote(activeSegmentId, "");
+                            setUserNotes(prev => {
+                              const updated = { ...prev };
+                              delete updated[activeSegmentId];
+                              return updated;
+                            });
+                            if (userAnnotations[activeSegmentId]) {
+                              const updatedAnno = await saveSegmentAnnotation(
+                                activeSegmentId,
+                                userAnnotations[activeSegmentId].color,
+                                ""
+                              );
+                              setUserAnnotations(updatedAnno);
+                            }
+                            Snackbar.show({
+                              text: "Note deleted",
+                              duration: Snackbar.LENGTH_SHORT,
+                            });
+                          } catch (err) {
+                            console.error("Error deleting note:", err);
+                          } finally {
+                            setActiveSegmentId(null);
+                          }
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.error} />
+                        <Text style={[styles.sheetActionBtnText, { color: colors.error }]}>Delete Note</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
               </View>
             </Pressable>
           </Pressable>
@@ -884,10 +969,10 @@ export default function ReaderScreen() {
                 {/* Sutta Actions */}
                 <Pressable
                   style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
-                  onPress={handleCopyEntireSutta}
+                  onPress={handleShareEntireSutta}
                 >
-                  <Ionicons name="copy-outline" size={20} color={colors.textPrimary} style={{ marginRight: 12 }} />
-                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>Copy Entire Sutta</Text>
+                  <Ionicons name="share-social-outline" size={20} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>Share Sutta</Text>
                 </Pressable>
 
                 <Pressable
@@ -968,6 +1053,7 @@ const SegmentItem = React.memo(
     onSegmentPress,
     authorUid,
   }: SegmentItemProps) => {
+    const [isNoteExpanded, setIsNoteExpanded] = useState(false);
     const isLegacy = segId.includes(":legacy:");
     let isHeader = false;
     let isCollection = false;
@@ -1184,15 +1270,28 @@ const SegmentItem = React.memo(
             </Pressable>
           )}
 
-          {activeNoteText && (
+          {showComments && activeNoteText && (
             <View style={[styles.userNoteContainer, { backgroundColor: cardAccentColor + "15", borderColor: cardAccentColor + "40" }]}>
-              <View style={styles.userNoteHeader}>
-                <Ionicons name="create-outline" size={14} color={cardAccentColor} style={{ marginRight: 6 }} />
-                <Text style={[styles.userNoteHeaderText, { color: cardAccentColor }]}>Annotation Note</Text>
-              </View>
-              <Text style={[styles.userNoteText, { color: colors.textPrimary, fontSize: Math.max(12, fontSize - 2) }]}>
-                {activeNoteText}
-              </Text>
+              <Pressable
+                onPress={() => setIsNoteExpanded(!isNoteExpanded)}
+                style={styles.userNoteHeader}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                  <Ionicons name="create-outline" size={14} color={cardAccentColor} style={{ marginRight: 6 }} />
+                  <Text style={[styles.userNoteHeaderText, { color: cardAccentColor }]}>Annotation Note</Text>
+                </View>
+                <Ionicons
+                  name={isNoteExpanded ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color={cardAccentColor}
+                />
+              </Pressable>
+              {isNoteExpanded && (
+                <Text style={[styles.userNoteText, { color: colors.textPrimary, fontSize: Math.max(12, fontSize - 2), marginTop: 4 }]}>
+                  {activeNoteText}
+                </Text>
+              )}
             </View>
           )}
         </View>
