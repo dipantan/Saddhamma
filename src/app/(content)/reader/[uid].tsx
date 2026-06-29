@@ -150,6 +150,11 @@ export default function ReaderScreen() {
   const initReader = useCallback(async (isMounted: boolean) => {
     setLoading(true);
     setError(null);
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Loading timed out. You may be offline or network connection is slow.")), 7000)
+    );
+
     try {
       const saved = await loadSettings();
       if (!isMounted) return;
@@ -163,7 +168,7 @@ export default function ReaderScreen() {
         setShowComments(prev => saved.showComments !== undefined ? saved.showComments : prev);
         setFontSize(prev => saved.fontSize !== undefined ? saved.fontSize : prev);
       }
-      const result = await getSuttaContent(uid);
+      const result = await Promise.race([getSuttaContent(uid), timeoutPromise]) as any;
       if (!isMounted) return;
       if (!result) {
         setError("Sutta content could not be loaded. It might be missing or you may be offline.");
@@ -194,10 +199,10 @@ export default function ReaderScreen() {
           setUserAnnotations(annotations);
         }
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Reader init error:", err);
       if (isMounted) {
-        setError("An unexpected error occurred while loading the sutta.");
+        setError(err?.message || "An unexpected error occurred while loading the sutta.");
       }
     } finally {
       if (isMounted) {
@@ -362,36 +367,6 @@ export default function ReaderScreen() {
     [data, colors, fontSize, showPali, showTranslation, showSegments, showComments, hasTranslation, userAnnotations, userNotes],
   );
 
-  if (loading) return <LoadingState message="Loading Dhamma…" />;
-
-  if (error || !data) {
-    return (
-      <View
-        style={[
-          styles.container,
-          styles.center,
-          { backgroundColor: colors.background, paddingTop: insets.top },
-        ]}
-      >
-        <Text style={styles.largeEmoji}>{error ? "⚠️" : "📖"}</Text>
-        <Text style={[styles.centerText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
-          {error || "Sutta not found."}
-        </Text>
-        {error && (
-          <Pressable
-            style={({ pressed }) => [
-              styles.retryButton,
-              { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }
-            ]}
-            onPress={() => initReader(true)}
-          >
-            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Retry</Text>
-          </Pressable>
-        )}
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Stack.Screen
@@ -453,11 +428,38 @@ export default function ReaderScreen() {
         }}
       />
 
-      <FlatList
-        data={sortedSegments}
-        renderItem={renderSegment}
-        keyExtractor={(item) => item}
-        contentContainerStyle={styles.listContent}
+      {loading ? (
+        <LoadingState message="Loading Dhamma…" />
+      ) : error || !data ? (
+        <View
+          style={[
+            styles.container,
+            styles.center,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <Text style={styles.largeEmoji}>{error ? "⚠️" : "📖"}</Text>
+          <Text style={[styles.centerText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
+            {error || "Sutta not found."}
+          </Text>
+          {error && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.retryButton,
+                { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }
+              ]}
+              onPress={() => initReader(true)}
+            >
+              <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Retry</Text>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <FlatList
+          data={sortedSegments}
+          renderItem={renderSegment}
+          keyExtractor={(item) => item}
+          contentContainerStyle={styles.listContent}
         initialNumToRender={15}
         maxToRenderPerBatch={10}
         windowSize={10}
@@ -521,6 +523,7 @@ export default function ReaderScreen() {
           </View>
         }
       />
+      )}
 
       {selectedComment && (
         <Modal
@@ -1525,6 +1528,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minWidth: 40,
     textAlign: "center",
+  },
+  retryButton: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
 

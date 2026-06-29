@@ -135,7 +135,6 @@ export default function MenuScreen() {
 
   const renderItem = ({ item }: { item: any }) => {
     const isLeaf = item.node_type === "leaf" || item.type === "text";
-    const hasBadge = item.yellow_brick_road && item.yellow_brick_road_count > 0;
 
     return (
       <View style={styles.cardWrapper}>
@@ -160,7 +159,7 @@ export default function MenuScreen() {
               : router.push(`/menu/${item.uid}`)
           }
         >
-          {/* Header Row with Title and Badge */}
+          {/* Header Row with Title */}
           <View style={styles.cardHeaderRow}>
             <View style={styles.titleContainer}>
               <Text style={[styles.itemTitle, { color: colors.textPrimary }]}>
@@ -199,14 +198,6 @@ export default function MenuScreen() {
                 )}
               </View>
             </View>
-
-            {hasBadge && (
-              <View style={[styles.badge, { backgroundColor: "#B58105" }]}>
-                <Text style={styles.badgeText}>
-                  {item.yellow_brick_road_count} English
-                </Text>
-              </View>
-            )}
           </View>
 
           {/* Blurb / Description */}

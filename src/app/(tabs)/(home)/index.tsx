@@ -86,10 +86,11 @@ export default function HomeScreen() {
       setShowSyncDialog(true);
     } else {
       loadCategories();
-      await checkForUpdates(() => {
+      // Perform background update check asynchronously without blocking UI or category rendering
+      checkForUpdates(() => {
         setShowSyncDialog(true);
         handleSync();
-      });
+      }).catch(err => console.log("Background update check ignored:", err));
     }
   }, [loadCategories]);
 

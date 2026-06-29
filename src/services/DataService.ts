@@ -851,9 +851,16 @@ export async function getSuttaContent(
       const fetchUrl = `https://suttacentral.net/api/suttas/${uid}/${authorUid}?lang=${lang}&siteLanguage=${siteLang}`;
       console.log(`[Online Fallback] Fetching URL: ${fetchUrl}`);
       
-      const response = await fetch(fetchUrl);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      let response;
+      try {
+        response = await fetch(fetchUrl, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       
-      if (response.ok) {
+      if (response && response.ok) {
         const json = await response.json();
         
         // SuttaCentral API return structures for non-Pāli texts
@@ -1103,8 +1110,15 @@ export async function getSuttaContent(
 
       const fetchUrl = `https://suttacentral.net/api/suttas/${uid}/${authorUid}?lang=en`;
       console.log(`[Online Fallback Legacy] Fetching URL: ${fetchUrl}`);
-      const response = await fetch(fetchUrl);
-      if (response.ok) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      let response;
+      try {
+        response = await fetch(fetchUrl, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      if (response && response.ok) {
         const json = await response.json();
         const transObj = json.translation || json.root_text;
         if (transObj && transObj.text) {

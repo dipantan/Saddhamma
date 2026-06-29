@@ -38,8 +38,16 @@ export async function checkForUpdates(
   showNotification: boolean = true
 ): Promise<VersionInfo | false> {
   try {
-    const response = await fetch(VERSION_URL);
-    if (!response.ok) return false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    let response;
+    try {
+      response = await fetch(VERSION_URL, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    
+    if (!response || !response.ok) return false;
     const latest: VersionInfo = await response.json();
 
     const versionFile = new ExpoFile(VERSION_PATH);
@@ -73,12 +81,7 @@ export async function checkForUpdates(
 
     return latest;
   } catch (error) {
-    console.error("Error checking for updates:", error);
-    Snackbar.show({
-      text: 'Failed to check for updates',
-      duration: Snackbar.LENGTH_SHORT,
-      backgroundColor: '#FF3B30'
-    });
+    console.log("Offline or network unreachable during update check:", error);
     return false;
   }
 }
@@ -107,9 +110,17 @@ export async function syncData(
     // If updateInfo is false but we are not ready, we need to get the latest version info anyway
     let finalUpdateInfo = updateInfo;
     if (!finalUpdateInfo) {
-      const response = await fetch(VERSION_URL);
-      if (response.ok) {
-        finalUpdateInfo = await response.json();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(VERSION_URL, { signal: controller.signal });
+        if (response && response.ok) {
+          finalUpdateInfo = await response.json();
+        }
+      } catch (e) {
+        console.error("Network fetch failed in syncData:", e);
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
