@@ -510,125 +510,175 @@ export async function buildFullTextIndex(
   if (isIndexingActive) return;
   isIndexingActive = true;
   
-  const database = await getDb();
-
-  // Find UIDs that need body content indexing (translation_text is empty)
-  const pending = await database.getAllAsync<{ uid: string }>(
-    `SELECT uid FROM sutta_fts WHERE translation_text = '' AND root_text = ''`,
-  );
-
-  if (pending.length === 0) {
-    isIndexingActive = false;
-    return;
-  }
-
-  const total = pending.length;
-  let processed = 0;
-  const batchSize = 25;
-
-  // Prepare SQLite Statements once for the entire indexing run to avoid statement compilation locks
-  const deleteStmt = await database.prepareAsync(
-    "DELETE FROM sutta_fts WHERE uid = ?",
-  );
-  const insertStmt = await database.prepareAsync(
-    `INSERT INTO sutta_fts (uid, root_title, translated_title, acronym, blurb, translation_text, root_text)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
   try {
-    for (let i = 0; i < pending.length; i += batchSize) {
-      const batch = pending.slice(i, i + batchSize);
-      const payloads: any[] = [];
+    const database = await getDb();
 
-      // 1. Read metadata and load file content OUTSIDE the write transaction
-      for (const item of batch) {
-        try {
-          const meta = await database.getFirstAsync<any>(
-            `SELECT 
-               i.title,
-               m.translated_name,
-               m.root_name,
-               m.acronym,
-               m.blurb
-             FROM sutta_index i
-             LEFT JOIN sutta_metadata m ON i.uid = m.uid
-             WHERE i.uid = ?`,
-            [item.uid],
-          );
+    // Find UIDs that need body content indexing (translation_text is empty)
+    const pending = await database.getAllAsync<{ uid: string }>(
+      `SELECT uid FROM sutta_fts WHERE translation_text = '' AND root_text = ''`,
+    );
 
-          const content = await getSuttaContent(item.uid);
-          let translationStr = "";
-          let rootStr = "";
-
-          if (content) {
-            if (content.translation_text) {
-              translationStr = Object.values(content.translation_text)
-                .map((v) => stripHtml(v as string))
-                .join(" ");
-            }
-            if (content.root_text) {
-              rootStr = Object.values(content.root_text)
-                .map((v) => stripHtml(v as string))
-                .join(" ");
-            }
-          }
-
-          payloads.push({
-            uid: item.uid,
-            root_title: meta?.root_name || meta?.title || "",
-            translated_title: meta?.translated_name || "",
-            acronym: meta?.acronym || "",
-            blurb: stripHtml(meta?.blurb || ""),
-            translation_text: translationStr.trim(),
-            root_text: rootStr.trim(),
-          });
-        } catch (err) {
-          console.error(`Error loading content for ${item.uid}:`, err);
-        }
-      }
-
-      // 2. Perform fast writes inside a quick IMMEDIATE transaction to avoid deadlocks
-      await database.execAsync("BEGIN IMMEDIATE");
-      try {
-        for (const payload of payloads) {
-          try {
-            await deleteStmt.executeAsync([payload.uid]);
-            await insertStmt.executeAsync([
-              payload.uid,
-              payload.root_title,
-              payload.translated_title,
-              payload.acronym,
-              payload.blurb,
-              payload.translation_text,
-              payload.root_text,
-            ]);
-          } catch (err) {
-            console.error(`Error writing FTS index for ${payload.uid}:`, err);
-          }
-          processed++;
-        }
-        await database.execAsync("COMMIT");
-      } catch (transErr) {
-        await database.execAsync("ROLLBACK");
-        console.error("FTS transaction failed, rolled back:", transErr);
-      }
-
-      if (onProgress) {
-        onProgress(processed, total);
-      }
-      
-      lastProgress = { processed, total };
-      indexListeners.forEach(l => l(processed, total));
-
-      // Small delay to keep the UI responsive
-      await new Promise((resolve) => setTimeout(resolve, 50));
+    if (pending.length === 0) {
+      isIndexingActive = false;
+      return;
     }
+
+    const total = pending.length;
+    let processed = 0;
+    const batchSize = 50;
+
+    // Check base directory structure ONCE outside the loop
+    const isPublished = await new Directory(`${DATA_DIR}bilara-data-published/`).exists;
+    const bilaraDirName = isPublished ? "bilara-data-published" : "bilara-data";
+    const baseDir = `${DATA_DIR}${bilaraDirName}/`;
+
+    // Lightweight text loader specifically optimized for indexing
+    const loadTextForIndexing = async (entry: any) => {
+      let rootStr = "";
+      let translationStr = "";
+
+      if (!entry) return { rootStr, translationStr };
+
+      if (entry.online_cached) {
+        if (entry.translation_text) {
+          translationStr = Object.values(entry.translation_text).map(v => stripHtml(v as string)).join(" ");
+        }
+        if (entry.root_text) {
+          rootStr = Object.values(entry.root_text).map(v => stripHtml(v as string)).join(" ");
+        }
+        return { rootStr, translationStr };
+      }
+
+      if (entry.root) {
+        try {
+          const rootFile = new ExpoFile(`${baseDir}root/pli/ms/${entry.root}`);
+          if (await rootFile.exists) {
+            const parsed = JSON.parse(await rootFile.text());
+            rootStr = Object.values(parsed).map(v => stripHtml(v as string)).join(" ");
+          }
+        } catch (e) {}
+      }
+
+      if (entry.online_translation_text) {
+        translationStr = Object.values(entry.online_translation_text).map(v => stripHtml(v as string)).join(" ");
+      } else if (entry.translations) {
+        const selectedAuthor = entry.translations["sujato"] ? "sujato" : (Object.keys(entry.translations)[0] || "sujato");
+        const transPath = entry.translations[selectedAuthor];
+        if (transPath) {
+          try {
+            if (transPath.endsWith(".html")) {
+              const transFile = new ExpoFile(`${baseDir}${transPath}`);
+              if (await transFile.exists) {
+                translationStr = stripHtml(await transFile.text());
+              }
+            } else {
+              const transFile = new ExpoFile(`${baseDir}translation/en/${selectedAuthor}/${transPath}`);
+              if (await transFile.exists) {
+                const parsed = JSON.parse(await transFile.text());
+                translationStr = Object.values(parsed).map(v => stripHtml(v as string)).join(" ");
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      return { rootStr, translationStr };
+    };
+
+    // Prepare SQLite Statements once for the entire indexing run
+    const deleteStmt = await database.prepareAsync(
+      "DELETE FROM sutta_fts WHERE uid = ?",
+    );
+    const insertStmt = await database.prepareAsync(
+      `INSERT INTO sutta_fts (uid, root_title, translated_title, acronym, blurb, translation_text, root_text)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    try {
+      for (let i = 0; i < pending.length; i += batchSize) {
+        const batchUids = pending.slice(i, i + batchSize).map(p => p.uid);
+        const placeholders = batchUids.map(() => "?").join(",");
+
+        // Batch query metadata and index JSON data for all items in this batch simultaneously
+        const rows = await database.getAllAsync<any>(
+          `SELECT 
+             i.uid,
+             i.title,
+             i.data,
+             m.translated_name,
+             m.root_name,
+             m.acronym,
+             m.blurb
+           FROM sutta_index i
+           LEFT JOIN sutta_metadata m ON i.uid = m.uid
+           WHERE i.uid IN (${placeholders})`,
+          batchUids,
+        );
+
+        const payloads: any[] = [];
+
+        for (const row of rows) {
+          try {
+            let entry = null;
+            if (row.data) {
+              try { entry = JSON.parse(row.data); } catch (e) {}
+            }
+            const { rootStr, translationStr } = await loadTextForIndexing(entry);
+
+            payloads.push({
+              uid: row.uid,
+              root_title: row.root_name || row.title || "",
+              translated_title: row.translated_name || "",
+              acronym: row.acronym || "",
+              blurb: stripHtml(row.blurb || ""),
+              translation_text: translationStr.trim(),
+              root_text: rootStr.trim(),
+            });
+          } catch (err) {
+            console.error(`Error processing content for ${row.uid}:`, err);
+          }
+        }
+
+        // Fast batch writes using Expo SDK native withTransactionAsync (prevents app freeze/deadlocks)
+        await database.withTransactionAsync(async () => {
+          for (const payload of payloads) {
+            try {
+              await deleteStmt.executeAsync([payload.uid]);
+              await insertStmt.executeAsync([
+                payload.uid,
+                payload.root_title,
+                payload.translated_title,
+                payload.acronym,
+                payload.blurb,
+                payload.translation_text,
+                payload.root_text,
+              ]);
+            } catch (err) {
+              console.error(`Error writing FTS index for ${payload.uid}:`, err);
+            }
+            processed++;
+          }
+        });
+
+        if (onProgress) {
+          onProgress(processed, total);
+        }
+        
+        lastProgress = { processed, total };
+        indexListeners.forEach(l => l(processed, total));
+
+        // Yield execution briefly to keep UI smooth and responsive
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    } finally {
+      await deleteStmt.finalizeAsync();
+      await insertStmt.finalizeAsync();
+    }
+  } catch (error) {
+    console.error("Error building full text index:", error);
   } finally {
-    // Always release statement locks and clear indexing active state
-    await deleteStmt.finalizeAsync();
-    await insertStmt.finalizeAsync();
     isIndexingActive = false;
-    indexListeners.forEach(l => l(total, total)); // Signal completion
+    indexListeners.forEach(l => l(lastProgress.total || 0, lastProgress.total || 0));
   }
 }
 

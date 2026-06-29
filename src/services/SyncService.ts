@@ -61,6 +61,7 @@ export async function checkForUpdates(
           text: 'UPDATE',
           textColor: '#34C759',
           onPress: () => {
+            Snackbar.dismiss();
             console.log("User requested update via Snackbar");
             if (onUpdateAction) {
               onUpdateAction();
@@ -91,6 +92,7 @@ export async function syncData(
   onProgress: (progress: SyncProgress) => void,
 ): Promise<boolean> {
   try {
+    Snackbar.dismiss();
     onProgress({ percent: 0, message: "Checking for updates..." });
     const ready = await isDataReady();
     const updateInfo = await checkForUpdates(undefined, false);
@@ -117,10 +119,6 @@ export async function syncData(
 
     console.log("Starting data sync...");
     onProgress({ percent: 0, message: "Connecting to server..." });
-    Snackbar.show({
-      text: 'Starting data sync...',
-      duration: Snackbar.LENGTH_SHORT,
-    });
 
     const zipFile = new ExpoFile(ZIP_PATH);
     const downloadTask = ExpoFile.createDownloadTask(DATA_URL, zipFile, {
@@ -128,7 +126,7 @@ export async function syncData(
         const percent = Math.round((progress.bytesWritten / progress.totalBytes) * 100);
         onProgress({
           percent: percent / 100,
-          message: `Downloading Sutta data (${percent}%)`,
+          message: "Downloading Sutta data...",
         });
       }
     });
@@ -144,10 +142,6 @@ export async function syncData(
     console.log("Extracting data...");
     const unzipStartTime = Date.now();
     onProgress({ percent: null, message: "Extracting Sutta database..." });
-    Snackbar.show({
-      text: 'Extracting files...',
-      duration: Snackbar.LENGTH_SHORT,
-    });
     await unzip(result.uri, dataDir.uri);
     
     // DEBUG: Log contents to see what actually got extracted
@@ -179,25 +173,17 @@ export async function syncData(
 
     const unzipDuration = ((Date.now() - unzipStartTime) / 1000).toFixed(2);
     console.log(`Extraction process (including normalization) completed in ${unzipDuration}s`);
-    Snackbar.show({
-      text: `Extraction complete (${unzipDuration}s)`,
-      duration: Snackbar.LENGTH_SHORT,
-    });
 
     const versionFile = new ExpoFile(VERSION_PATH);
     await versionFile.write(JSON.stringify(finalUpdateInfo));
 
     console.log("Populating index...");
-    onProgress({ percent: 0, message: "Finalizing index..." });
-    Snackbar.show({
-      text: 'Finalizing index...',
-      duration: Snackbar.LENGTH_SHORT,
-    });
+    onProgress({ percent: 0, message: "Indexing database..." });
     
     await populateIndex((progressPercent) => {
       onProgress({
         percent: progressPercent,
-        message: `Indexing database (${Math.round(progressPercent * 100)}%)`,
+        message: "Indexing database...",
       });
     });
 

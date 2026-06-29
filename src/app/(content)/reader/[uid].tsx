@@ -594,11 +594,11 @@ export default function ReaderScreen() {
                 ))}
               </View>
 
-              <View style={styles.sheetActionRow}>
+              <View style={[styles.sheetActionRow, { flexWrap: "wrap", gap: spacing.sm }]}>
                 <Pressable
                   style={({ pressed }) => [
                     styles.sheetActionBtn,
-                    { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }
+                    { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1, flex: 1, minWidth: 120 }
                   ]}
                   onPress={() => {
                     const currentNote = userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId] || "";
@@ -616,12 +616,16 @@ export default function ReaderScreen() {
                   <Pressable
                     style={({ pressed }) => [
                       styles.sheetActionBtn,
-                      { backgroundColor: colors.error, opacity: pressed ? 0.8 : 1 }
+                      { backgroundColor: colors.error, opacity: pressed ? 0.8 : 1, flex: 1, minWidth: 140 }
                     ]}
                     onPress={async () => {
                       try {
                         const updated = await deleteSegmentAnnotation(activeSegmentId);
                         setUserAnnotations(updated);
+                        Snackbar.show({
+                          text: "Highlight removed",
+                          duration: Snackbar.LENGTH_SHORT,
+                        });
                       } catch (err) {
                         console.error("Error deleting annotation:", err);
                       } finally {
@@ -630,6 +634,43 @@ export default function ReaderScreen() {
                     }}
                   >
                     <Text style={[styles.sheetActionBtnText, { color: "#FFFFFF" }]}>Remove Highlight</Text>
+                  </Pressable>
+                )}
+
+                {(userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) && (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.sheetActionBtn,
+                      { backgroundColor: colors.error, opacity: pressed ? 0.8 : 1, flex: 1, minWidth: 120 }
+                    ]}
+                    onPress={async () => {
+                      try {
+                        await saveUserNote(activeSegmentId, "");
+                        setUserNotes(prev => {
+                          const updated = { ...prev };
+                          delete updated[activeSegmentId];
+                          return updated;
+                        });
+                        if (userAnnotations[activeSegmentId]) {
+                          const updatedAnno = await saveSegmentAnnotation(
+                            activeSegmentId,
+                            userAnnotations[activeSegmentId].color,
+                            ""
+                          );
+                          setUserAnnotations(updatedAnno);
+                        }
+                        Snackbar.show({
+                          text: "Note deleted",
+                          duration: Snackbar.LENGTH_SHORT,
+                        });
+                      } catch (err) {
+                        console.error("Error deleting note:", err);
+                      } finally {
+                        setActiveSegmentId(null);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.sheetActionBtnText, { color: "#FFFFFF" }]}>Delete Note</Text>
                   </Pressable>
                 )}
               </View>
@@ -696,15 +737,43 @@ export default function ReaderScreen() {
                 placeholderTextColor={colors.textTertiary}
                 autoFocus
               />
-              <View style={styles.modalButtons}>
+              <View style={[styles.modalButtons, { gap: spacing.xs }]}>
                 <Pressable
-                  style={[styles.button, { backgroundColor: colors.surfaceVariant }]}
+                  style={[styles.button, { backgroundColor: colors.surfaceVariant, flex: 1 }]}
                   onPress={() => setEditingNoteSegmentId(null)}
                 >
                   <Text style={[styles.buttonText, { color: colors.textSecondary }]}>Cancel</Text>
                 </Pressable>
+                {(userNotes[editingNoteSegmentId] || userAnnotations[editingNoteSegmentId]?.note) && (
+                  <Pressable
+                    style={[styles.button, { backgroundColor: colors.error, flex: 1 }]}
+                    onPress={async () => {
+                      await saveUserNote(editingNoteSegmentId, "");
+                      setUserNotes(prev => {
+                        const updated = { ...prev };
+                        delete updated[editingNoteSegmentId];
+                        return updated;
+                      });
+                      if (userAnnotations[editingNoteSegmentId]) {
+                        const updatedAnno = await saveSegmentAnnotation(
+                          editingNoteSegmentId,
+                          userAnnotations[editingNoteSegmentId].color,
+                          ""
+                        );
+                        setUserAnnotations(updatedAnno);
+                      }
+                      Snackbar.show({
+                        text: "Note deleted",
+                        duration: Snackbar.LENGTH_SHORT,
+                      });
+                      setEditingNoteSegmentId(null);
+                    }}
+                  >
+                    <Text style={[styles.buttonText, { color: "#FFFFFF" }]}>Delete</Text>
+                  </Pressable>
+                )}
                 <Pressable
-                  style={[styles.button, { backgroundColor: colors.primary }]}
+                  style={[styles.button, { backgroundColor: colors.primary, flex: 1 }]}
                   onPress={async () => {
                     await saveUserNote(editingNoteSegmentId, noteText);
                     setUserNotes(prev => {

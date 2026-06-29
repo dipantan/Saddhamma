@@ -179,6 +179,7 @@ function RootNavigator() {
               text: "RESTART",
               textColor: "#FFD54F",
               onPress: () => {
+                Snackbar.dismiss();
                 Updates.reloadAsync();
               },
             },
