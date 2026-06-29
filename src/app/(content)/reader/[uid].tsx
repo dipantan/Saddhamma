@@ -1,43 +1,20 @@
-import { LoadingState, CustomErrorBoundary } from "@/components";
-export { CustomErrorBoundary as ErrorBoundary } from "@/components";
+import { LoadingState } from "@/components";
 import {
+  addReadingLog,
   checkBookmark,
+  deleteSegmentAnnotation,
   getSuttaContent,
+  getUserAnnotations,
+  getUserNotes,
   loadSettings,
+  saveSegmentAnnotation,
   saveSettings,
+  saveUserNote,
+  SegmentAnnotation,
   stripHtml,
   toggleBookmark,
-  getUserNotes,
-  saveUserNote,
-  getUserAnnotations,
-  saveSegmentAnnotation,
-  deleteSegmentAnnotation,
-  SegmentAnnotation,
-  addReadingLog,
 } from "@/services/DataService";
 import { radius, spacing, useTheme } from "@/theme";
-import {
-  Button,
-  Checkbox,
-  Column,
-  DropdownMenu,
-  DropdownMenuItem,
-  HorizontalDivider,
-  Host,
-  Items,
-  LazyColumn,
-  ModalBottomSheet,
-  Text as NativeText,
-  RNHostView,
-  Row,
-  Trigger,
-} from "@expo/ui/jetpack-compose";
-import {
-  fillMaxWidth,
-  height,
-  padding,
-  paddingAll
-} from "@expo/ui/jetpack-compose/modifiers";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -49,6 +26,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -56,6 +34,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Snackbar } from "react-native-snackbar";
+export { CustomErrorBoundary as ErrorBoundary } from "@/components";
 
 const SERIF_FONT = Platform.select({
   ios: "Georgia",
@@ -76,7 +55,7 @@ const isDuplicateText = (str1?: string, str2?: string): boolean => {
   const s1 = clean(str1);
   const s2 = clean(str2);
   if (s1 === s2) return true;
-  
+
   // Match range numbers (e.g. 1-10) or single numbers (e.g. 5)
   const isNumericOrRange = (s: string) => /^\d+(-\d+)*$/.test(s);
   if (isNumericOrRange(s1) && isNumericOrRange(s2)) {
@@ -203,7 +182,7 @@ export default function ReaderScreen() {
           return textMap[suttaNameKey || firstKey] || "";
         };
         const transTitle = getBestTitle(result?.translation_text) || title || uid;
-        addReadingLog(uid, stripHtml(transTitle)).catch(err => 
+        addReadingLog(uid, stripHtml(transTitle)).catch(err =>
           console.error("Error logging reading history:", err)
         );
 
@@ -387,389 +366,161 @@ export default function ReaderScreen() {
 
   if (error || !data) {
     return (
-      <Host>
-        <View
-          style={[
-            styles.container,
-            styles.center,
-            { backgroundColor: colors.background, paddingTop: insets.top },
-          ]}
-        >
-          <Text style={styles.largeEmoji}>{error ? "⚠️" : "📖"}</Text>
-          <Text style={[styles.centerText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
-            {error || "Sutta not found."}
-          </Text>
-          {error && (
-            <Pressable 
-              style={({ pressed }) => [
-                styles.retryButton, 
-                { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }
-              ]}
-              onPress={() => initReader(true)}
-            >
-              <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Retry</Text>
-            </Pressable>
-          )}
-        </View>
-      </Host>
+      <View
+        style={[
+          styles.container,
+          styles.center,
+          { backgroundColor: colors.background, paddingTop: insets.top },
+        ]}
+      >
+        <Text style={styles.largeEmoji}>{error ? "⚠️" : "📖"}</Text>
+        <Text style={[styles.centerText, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl }]}>
+          {error || "Sutta not found."}
+        </Text>
+        {error && (
+          <Pressable
+            style={({ pressed }) => [
+              styles.retryButton,
+              { backgroundColor: colors.primary, opacity: pressed ? 0.7 : 1 }
+            ]}
+            onPress={() => initReader(true)}
+          >
+            <Text style={[styles.retryButtonText, { color: colors.textInverse }]}>Retry</Text>
+          </Pressable>
+        )}
+      </View>
     );
   }
 
   return (
-    <Host style={{ flex: 1 }}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Stack.Screen
-          options={{
-            title: title || uid?.toUpperCase() || "Reader",
-            headerRight: () => (
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Host matchContents>
-                  <RNHostView matchContents>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Stack.Screen
+        options={{
+          title: title || uid?.toUpperCase() || "Reader",
+          headerRight: () => (
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Pressable
+                onPress={async () => {
+                  const getBestTitle = (textMap: any) => {
+                    if (!textMap) return "";
+                    const keys = Object.keys(textMap);
+                    if (keys.length === 0) return "";
+                    const suttaNameKey = keys.find((k) =>
+                      k.endsWith(":0.2"),
+                    );
+                    const firstKey = keys[0];
+                    return textMap[suttaNameKey || firstKey] || "";
+                  };
+
+                  const transTitle =
+                    getBestTitle(data?.translation_text) || uid;
+                  const rootTitle = getBestTitle(data?.root_text) || "";
+
+                  const newState = await toggleBookmark(
+                    uid,
+                    stripHtml(transTitle),
+                    stripHtml(rootTitle),
+                  );
+                  setIsBookmarked(newState);
+                  Snackbar.show({
+                    text: newState ? "Sutta bookmarked" : "Bookmark removed",
+                    duration: Snackbar.LENGTH_SHORT,
+                  });
+                }}
+                style={styles.iconBtn}
+              >
+                <Ionicons
+                  name={isBookmarked ? "bookmark" : "bookmark-outline"}
+                  size={24}
+                  color={
+                    isBookmarked ? colors.primary : colors.textPrimary
+                  }
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() => setMenuExpanded(true)}
+                style={styles.iconBtn}
+              >
+                <Ionicons
+                  name="ellipsis-vertical"
+                  size={24}
+                  color={colors.textPrimary}
+                />
+              </Pressable>
+            </View>
+          ),
+        }}
+      />
+
+      <FlatList
+        data={sortedSegments}
+        renderItem={renderSegment}
+        keyExtractor={(item) => item}
+        contentContainerStyle={styles.listContent}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        ListHeaderComponent={
+          <View>
+            {!hasTranslation && data && (
+              <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
+                  No English translation is available for this text. Showing {getLanguageName(resolvedRootLang)} root text.
+                </Text>
+              </View>
+            )}
+            {isLegacyTranslation && (
+              <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+                <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
+                  This is a legacy, non-aligned translation by {data?.author_uid ? data.author_uid.charAt(0).toUpperCase() + data.author_uid.slice(1) : "author"}. {getLanguageName(resolvedRootLang)} and English texts are shown independently.
+                </Text>
+              </View>
+            )}
+            {userNotes[uid] && (
+              <View style={[styles.suttaNoteCard, { backgroundColor: colors.primary + "0A", borderColor: colors.primary + "30" }]}>
+                <View style={styles.suttaNoteHeader}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Ionicons name="journal-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                    <Text style={[styles.suttaNoteHeaderTitle, { color: colors.primary }]}>Sutta Reflection Note</Text>
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <Pressable
+                      onPress={() => {
+                        setNoteText(userNotes[uid]);
+                        setEditingNoteSegmentId(uid);
+                      }}
+                      hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 6 })}
+                    >
+                      <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
+                    </Pressable>
                     <Pressable
                       onPress={async () => {
-                        const getBestTitle = (textMap: any) => {
-                          if (!textMap) return "";
-                          const keys = Object.keys(textMap);
-                          if (keys.length === 0) return "";
-                          // Prefer 0.2 (Sutta Name) over 0.1 (Nikaya Name)
-                          const suttaNameKey = keys.find((k) =>
-                            k.endsWith(":0.2"),
-                          );
-                          const firstKey = keys[0];
-                          return textMap[suttaNameKey || firstKey] || "";
-                        };
-
-                        const transTitle =
-                          getBestTitle(data?.translation_text) || uid;
-                        const rootTitle = getBestTitle(data?.root_text) || "";
-
-                        const newState = await toggleBookmark(
-                          uid,
-                          stripHtml(transTitle),
-                          stripHtml(rootTitle),
-                        );
-                        setIsBookmarked(newState);
-                        Snackbar.show({
-                          text: newState ? "Sutta bookmarked" : "Bookmark removed",
-                          duration: Snackbar.LENGTH_SHORT,
+                        await saveUserNote(uid, "");
+                        setUserNotes(prev => {
+                          const updated = { ...prev };
+                          delete updated[uid];
+                          return updated;
                         });
                       }}
-                      style={styles.iconBtn}
+                      hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 6 })}
                     >
-                      <Ionicons
-                        name={isBookmarked ? "bookmark" : "bookmark-outline"}
-                        size={24}
-                        color={
-                          isBookmarked ? colors.primary : colors.textPrimary
-                        }
-                      />
+                      <Ionicons name="trash-outline" size={16} color={colors.error} />
                     </Pressable>
-                  </RNHostView>
-                </Host>
-
-                <Host matchContents>
-                  <DropdownMenu
-                    expanded={menuExpanded}
-                    onDismissRequest={() => setMenuExpanded(false)}
-                  >
-                    <Trigger>
-                      <RNHostView matchContents>
-                        <Pressable
-                          onPress={() => setMenuExpanded(true)}
-                          style={styles.iconBtn}
-                        >
-                          <Ionicons
-                            name="ellipsis-vertical"
-                            size={24}
-                            color={colors.textPrimary}
-                          />
-                        </Pressable>
-                      </RNHostView>
-                    </Trigger>
-
-                    <Items>
-                      <DropdownMenuItem onClick={() => setDisplayMode("bilingual")}>
-                        <DropdownMenuItem.LeadingIcon>
-                          <Checkbox
-                            value={displayMode === "bilingual"}
-                            onCheckedChange={() => setDisplayMode("bilingual")}
-                            colors={{
-                              checkedColor: colors.primary,
-                              uncheckedColor: colors.outline,
-                              checkmarkColor: colors.surface,
-                            }}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            Bilingual (EN + Pāli)
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem onClick={() => setDisplayMode("en")}>
-                        <DropdownMenuItem.LeadingIcon>
-                          <Checkbox
-                            value={displayMode === "en"}
-                            onCheckedChange={() => setDisplayMode("en")}
-                            colors={{
-                              checkedColor: colors.primary,
-                              uncheckedColor: colors.outline,
-                              checkmarkColor: colors.surface,
-                            }}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            English Only
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem onClick={() => setDisplayMode("pli")}>
-                        <DropdownMenuItem.LeadingIcon>
-                          <Checkbox
-                            value={displayMode === "pli"}
-                            onCheckedChange={() => setDisplayMode("pli")}
-                            colors={{
-                              checkedColor: colors.primary,
-                              uncheckedColor: colors.outline,
-                              checkmarkColor: colors.surface,
-                            }}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            {`${getLanguageName(resolvedRootLang)} Only`}
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem
-                        onClick={() => setShowSegments(!showSegments)}
-                      >
-                        <DropdownMenuItem.LeadingIcon>
-                          <Checkbox
-                            value={showSegments}
-                            onCheckedChange={setShowSegments}
-                            colors={{
-                              checkedColor: colors.primary,
-                              uncheckedColor: colors.outline,
-                              checkmarkColor: colors.surface,
-                            }}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            Segments
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem
-                        onClick={() => setShowComments(!showComments)}
-                      >
-                        <DropdownMenuItem.LeadingIcon>
-                          <Checkbox
-                            value={showComments}
-                            onCheckedChange={setShowComments}
-                            colors={{
-                              checkedColor: colors.primary,
-                              uncheckedColor: colors.outline,
-                              checkmarkColor: colors.surface,
-                            }}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            Comments
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <DropdownMenuItem onClick={handleCopyEntireSutta}>
-                        <DropdownMenuItem.LeadingIcon>
-                          <Ionicons
-                            name="copy-outline"
-                            size={20}
-                            color={colors.textPrimary}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            Copy entire sutta
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <HorizontalDivider thickness={1} color={colors.divider} />
-
-                      <DropdownMenuItem onClick={() => {
-                        setNoteText(userNotes[uid] || "");
-                        setEditingNoteSegmentId(uid);
-                        setMenuExpanded(false);
-                      }}>
-                        <DropdownMenuItem.LeadingIcon>
-                          <Ionicons
-                            name="journal-outline"
-                            size={20}
-                            color={colors.textPrimary}
-                          />
-                        </DropdownMenuItem.LeadingIcon>
-                        <DropdownMenuItem.Text>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "bodyLarge" }}
-                          >
-                            {userNotes[uid] ? "Edit Sutta Notes" : "Add Sutta Notes"}
-                          </NativeText>
-                        </DropdownMenuItem.Text>
-                      </DropdownMenuItem>
-
-                      <HorizontalDivider thickness={1} color={colors.divider} />
-
-                      <Column modifiers={[paddingAll(12)]}>
-                        <NativeText
-                          color={colors.textSecondary}
-                          style={{ typography: "labelSmall" }}
-                          modifiers={[padding(0, 0, 0, 8)]}
-                        >
-                          FONT SIZE
-                        </NativeText>
-                        <Row
-                          horizontalArrangement={{ spacedBy: 16 }}
-                          verticalAlignment="center"
-                          modifiers={[fillMaxWidth()]}
-                        >
-                          <Button
-                            colors={{ containerColor: colors.primary }}
-                            onClick={() =>
-                              setFontSize(Math.max(12, fontSize - 2))
-                            }
-                          >
-                            <NativeText
-                              color={colors.surface}
-                              style={{ typography: "labelLarge" }}
-                            >
-                              A-
-                            </NativeText>
-                          </Button>
-                          <NativeText
-                            color={colors.textPrimary}
-                            style={{ typography: "titleMedium" }}
-                          >
-                            {fontSize}
-                          </NativeText>
-                          <Button
-                            colors={{ containerColor: colors.primary }}
-                            onClick={() =>
-                              setFontSize(Math.min(32, fontSize + 2))
-                            }
-                          >
-                            <NativeText
-                              color={colors.surface}
-                              style={{ typography: "labelLarge" }}
-                            >
-                              A+
-                            </NativeText>
-                          </Button>
-                        </Row>
-                      </Column>
-                    </Items>
-                  </DropdownMenu>
-                </Host>
-              </View>
-            ),
-          }}
-        />
-
-        <FlatList
-          data={sortedSegments}
-          renderItem={renderSegment}
-          keyExtractor={(item) => item}
-          contentContainerStyle={styles.listContent}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          ListHeaderComponent={
-            <View>
-              {!hasTranslation && data && (
-                <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
-                  <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-                  <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
-                    No English translation is available for this text. Showing {getLanguageName(resolvedRootLang)} root text.
-                  </Text>
-                </View>
-              )}
-              {isLegacyTranslation && (
-                <View style={[styles.infoBanner, { backgroundColor: colors.surfaceVariant, borderColor: colors.divider }]}>
-                  <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-                  <Text style={[styles.infoBannerText, { color: colors.textSecondary }]}>
-                    This is a legacy, non-aligned translation by {data?.author_uid ? data.author_uid.charAt(0).toUpperCase() + data.author_uid.slice(1) : "author"}. {getLanguageName(resolvedRootLang)} and English texts are shown independently.
-                  </Text>
-                </View>
-              )}
-              {userNotes[uid] && (
-                <View style={[styles.suttaNoteCard, { backgroundColor: colors.primary + "0A", borderColor: colors.primary + "30" }]}>
-                  <View style={styles.suttaNoteHeader}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Ionicons name="journal-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-                      <Text style={[styles.suttaNoteHeaderTitle, { color: colors.primary }]}>Sutta Reflection Note</Text>
-                    </View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                      <Pressable 
-                        onPress={() => {
-                          setNoteText(userNotes[uid]);
-                          setEditingNoteSegmentId(uid);
-                        }}
-                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 6 })}
-                      >
-                        <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
-                      </Pressable>
-                      <Pressable 
-                        onPress={async () => {
-                          await saveUserNote(uid, "");
-                          setUserNotes(prev => {
-                            const updated = { ...prev };
-                            delete updated[uid];
-                            return updated;
-                          });
-                        }}
-                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: 6 })}
-                      >
-                        <Ionicons name="trash-outline" size={16} color={colors.error} />
-                      </Pressable>
-                    </View>
                   </View>
-                  <Text style={[styles.suttaNoteText, { color: colors.textPrimary, fontSize: Math.max(13, fontSize - 4) }]}>
-                    {userNotes[uid]}
-                  </Text>
                 </View>
-              )}
-            </View>
-          }
-        />
-      </View>
+                <Text style={[styles.suttaNoteText, { color: colors.textPrimary, fontSize: Math.max(13, fontSize - 4) }]}>
+                  {userNotes[uid]}
+                </Text>
+              </View>
+            )}
+          </View>
+        }
+      />
 
       {selectedComment && (
         <Modal
@@ -813,7 +564,7 @@ export default function ReaderScreen() {
               </View>
 
               <Text style={[styles.sheetSubLabel, { color: colors.textSecondary }]}>HIGHLIGHT COLOR</Text>
-              
+
               <View style={styles.colorPaletteRow}>
                 {[
                   { name: "Yellow", color: "#FFB300", textColor: "#000000", id: "yellow" },
@@ -983,7 +734,129 @@ export default function ReaderScreen() {
           </KeyboardAvoidingView>
         </Modal>
       )}
-    </Host>
+
+      {menuExpanded && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setMenuExpanded(false)}
+        >
+          <Pressable style={styles.sheetOverlay} onPress={() => setMenuExpanded(false)}>
+            <Pressable style={[styles.menuModalContent, { backgroundColor: colors.surface }]}>
+              <View style={styles.sheetHeader}>
+                <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Reader Options</Text>
+                <Pressable onPress={() => setMenuExpanded(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close" size={24} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* Display Mode options */}
+                <Text style={[styles.sheetSubLabel, { color: colors.textSecondary }]}>DISPLAY MODE</Text>
+                {[
+                  { label: "Bilingual (EN + Pāli)", mode: "bilingual" },
+                  { label: "English Only", mode: "en" },
+                  { label: `${getLanguageName(resolvedRootLang)} Only`, mode: "pli" },
+                ].map((item) => (
+                  <Pressable
+                    key={item.mode}
+                    style={({ pressed }) => [
+                      styles.menuOptionRow,
+                      { opacity: pressed ? 0.7 : 1 }
+                    ]}
+                    onPress={() => setDisplayMode(item.mode as any)}
+                  >
+                    <Ionicons
+                      name={displayMode === item.mode ? "checkmark-circle" : "ellipse-outline"}
+                      size={20}
+                      color={displayMode === item.mode ? colors.primary : colors.textTertiary}
+                      style={{ marginRight: 12 }}
+                    />
+                    <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>{item.label}</Text>
+                  </Pressable>
+                ))}
+
+                <View style={[styles.dividerLine, { backgroundColor: colors.divider }]} />
+
+                {/* Toggles */}
+                <Text style={[styles.sheetSubLabel, { color: colors.textSecondary }]}>VIEW OPTIONS</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={() => setShowSegments(!showSegments)}
+                >
+                  <Ionicons
+                    name={showSegments ? "checkmark-circle" : "ellipse-outline"}
+                    size={20}
+                    color={showSegments ? colors.primary : colors.textTertiary}
+                    style={{ marginRight: 12 }}
+                  />
+                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>Segment Numbers</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={() => setShowComments(!showComments)}
+                >
+                  <Ionicons
+                    name={showComments ? "checkmark-circle" : "ellipse-outline"}
+                    size={20}
+                    color={showComments ? colors.primary : colors.textTertiary}
+                    style={{ marginRight: 12 }}
+                  />
+                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>Notes & Comments</Text>
+                </Pressable>
+
+                <View style={[styles.dividerLine, { backgroundColor: colors.divider }]} />
+
+                {/* Sutta Actions */}
+                <Pressable
+                  style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={handleCopyEntireSutta}
+                >
+                  <Ionicons name="copy-outline" size={20} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>Copy Entire Sutta</Text>
+                </Pressable>
+
+                <Pressable
+                  style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={() => {
+                    setNoteText(userNotes[uid] || "");
+                    setEditingNoteSegmentId(uid);
+                    setMenuExpanded(false);
+                  }}
+                >
+                  <Ionicons name="journal-outline" size={20} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>
+                    {userNotes[uid] ? "Edit Sutta Notes" : "Add Sutta Notes"}
+                  </Text>
+                </Pressable>
+
+                <View style={[styles.dividerLine, { backgroundColor: colors.divider }]} />
+
+                {/* Font Size */}
+                <Text style={[styles.sheetSubLabel, { color: colors.textSecondary }]}>FONT SIZE</Text>
+                <View style={styles.fontSizeControlsRow}>
+                  <Pressable
+                    style={({ pressed }) => [styles.fontAdjustBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }]}
+                    onPress={() => setFontSize(Math.max(12, fontSize - 2))}
+                  >
+                    <Text style={styles.fontAdjustBtnText}>A-</Text>
+                  </Pressable>
+                  <Text style={[styles.fontSizeVal, { color: colors.textPrimary }]}>{fontSize}</Text>
+                  <Pressable
+                    style={({ pressed }) => [styles.fontAdjustBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }]}
+                    onPress={() => setFontSize(Math.min(32, fontSize + 2))}
+                  >
+                    <Text style={styles.fontAdjustBtnText}>A+</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+    </View>
   );
 }
 
@@ -1059,7 +932,7 @@ const SegmentItem = React.memo(
 
     if (isHeader) {
       return (
-        <View 
+        <View
           style={styles.headerSegment}
         >
           <Text style={{ textAlign: "center", width: "100%" }}>
@@ -1143,7 +1016,7 @@ const SegmentItem = React.memo(
 
     const isDuplicate = isDuplicateText(root, displayTrans);
     const isDark = colors.background === "#121212" || colors.background === "#000000";
-    
+
     const getHighlightBg = (colorName?: string) => {
       switch (colorName) {
         case "green": return isDark ? "#0D3316" : "#E8F5E9";
@@ -1170,7 +1043,8 @@ const SegmentItem = React.memo(
 
     return (
       <Pressable
-        onPress={() => onSegmentPress(segId)}
+        onLongPress={() => onSegmentPress(segId)}
+        delayLongPress={300}
         style={({ pressed }) => [
           styles.bodySegment,
           {
@@ -1217,23 +1091,26 @@ const SegmentItem = React.memo(
                 ]}
               >
                 {trans}
-                {showComments && comment && (
-                  <Text
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      onCommentPress(comment);
-                    }}
-                    style={[
-                      styles.commentAsterisk,
-                      { color: colors.primary, fontSize: fontSize * 1.2 },
-                    ]}
-                  >
-                    *
-                  </Text>
-                )}
               </Text>
             )}
           </Text>
+
+          {showComments && comment && (
+            <Pressable
+              onPress={() => onCommentPress(comment)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={({ pressed }) => [
+                styles.commentIconBtn,
+                {
+                  backgroundColor: colors.primary + "1A",
+                  borderColor: colors.primary + "35",
+                  opacity: pressed ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.primary} />
+            </Pressable>
+          )}
 
           {activeNoteText && (
             <View style={[styles.userNoteContainer, { backgroundColor: cardAccentColor + "15", borderColor: cardAccentColor + "40" }]}>
@@ -1395,6 +1272,16 @@ const styles = StyleSheet.create({
   userNoteText: {
     lineHeight: 18,
   },
+  commentIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1524,6 +1411,51 @@ const styles = StyleSheet.create({
   sheetActionBtnText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  menuModalContent: {
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.xl,
+    maxHeight: "80%",
+  },
+  menuOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.md,
+  },
+  menuOptionText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  dividerLine: {
+    height: 1,
+    marginVertical: spacing.md,
+  },
+  fontSizeControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xl,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  fontAdjustBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fontAdjustBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  fontSizeVal: {
+    fontSize: 18,
+    fontWeight: "700",
+    minWidth: 40,
+    textAlign: "center",
   },
 });
 
