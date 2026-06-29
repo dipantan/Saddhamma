@@ -1,34 +1,32 @@
 import { SectionHeader } from "@/components";
-import { 
-  addIndexListener, 
-  buildFullTextIndex, 
+import {
+  addIndexListener,
+  buildFullTextIndex,
   isIndexingInProgress,
   loadSettings,
   saveSettings,
-  getDailySutta,
-  syncSuttaReminders,
+  syncSuttaReminders
 } from "@/services/DataService";
+import { getLogFilePath } from "@/services/LoggerService";
 import { radius, spacing, useTheme, type ThemeMode } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
+import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  Alert,
   Linking,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
-  Alert,
-  Switch,
-  Modal,
-  Platform,
 } from "react-native";
-import { readLogs, clearLogs, getLogFilePath } from "@/services/LoggerService";
-import * as Clipboard from "expo-clipboard";
-import * as Notifications from "expo-notifications";
-import * as WebBrowser from "expo-web-browser";
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
@@ -159,7 +157,7 @@ export default function SettingsScreen() {
       try {
         updateSavedSettings({ reminderEnabled: false });
         await syncSuttaReminders();
-        
+
         setReminderEnabled(false);
 
         Alert.alert("Disabled", "Daily Sutta reminders have been disabled.");
@@ -271,15 +269,15 @@ export default function SettingsScreen() {
   );
 
   return (
-    <ScrollView 
+    <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       showsHorizontalScrollIndicator={false}
     >
-      <SectionHeader 
-        title="Appearance" 
-        subtitle="Customize how the app looks and feels" 
+      <SectionHeader
+        title="Appearance"
+        subtitle="Customize how the app looks and feels"
       />
       <View style={styles.section}>
         {renderSettingRow({
@@ -290,9 +288,9 @@ export default function SettingsScreen() {
         })}
       </View>
 
-      <SectionHeader 
-        title="Reader Preferences" 
-        subtitle="Default preferences for sutta reading screen" 
+      <SectionHeader
+        title="Reader Preferences"
+        subtitle="Default preferences for sutta reading screen"
       />
       <View style={styles.section}>
         {renderSettingRow({
@@ -301,8 +299,8 @@ export default function SettingsScreen() {
           value: displayMode === "bilingual"
             ? "Bilingual (EN+Pāli)"
             : displayMode === "pli"
-            ? "Pāli Only"
-            : "English Only",
+              ? "Pāli Only"
+              : "English Only",
           onPress: handleCycleDisplayMode,
         })}
         {renderSettingRow({
@@ -317,7 +315,7 @@ export default function SettingsScreen() {
           value: showComments ? "Show" : "Hide",
           onPress: handleToggleComments,
         })}
-        
+
         <View style={[styles.row, { backgroundColor: colors.card, borderBottomColor: colors.divider }]}>
           <View style={styles.rowLead}>
             <Ionicons name="text" size={22} color={colors.primary} />
@@ -326,14 +324,14 @@ export default function SettingsScreen() {
             </Text>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-            <Pressable 
+            <Pressable
               onPress={() => handleAdjustFontSize(-2)}
               style={({ pressed }) => [styles.fontBtn, { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.7 : 1 }]}
             >
               <Text style={{ color: colors.textPrimary, fontWeight: "600" }}>A-</Text>
             </Pressable>
             <Text style={{ color: colors.textPrimary, fontWeight: "600", fontSize: 16 }}>{fontSize}</Text>
-            <Pressable 
+            <Pressable
               onPress={() => handleAdjustFontSize(2)}
               style={({ pressed }) => [styles.fontBtn, { backgroundColor: colors.surfaceVariant, opacity: pressed ? 0.7 : 1 }]}
             >
@@ -343,15 +341,15 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <SectionHeader 
-        title="Reminders & Practice" 
-        subtitle="Manage daily practice notifications" 
+      <SectionHeader
+        title="Reminders & Practice"
+        subtitle="Manage daily practice notifications"
       />
       <View style={styles.section}>
         {renderSettingRow({
           icon: "alarm-outline",
           label: "Daily Sutta Reminder",
-          value: reminderEnabled 
+          value: reminderEnabled
             ? `${reminderFrequency.charAt(0).toUpperCase() + reminderFrequency.slice(1)} at ${reminderHour.toString().padStart(2, "0")}:${reminderMinute.toString().padStart(2, "0")}`
             : "Disabled",
           onPress: () => {
@@ -386,7 +384,7 @@ export default function SettingsScreen() {
           label: "Support the Project",
           onPress: () => Linking.openURL("https://saddhamma.online/support.html"),
         })}
-        {renderSettingRow({
+        {/* {renderSettingRow({
           icon: "document-text-outline",
           label: "Diagnostic Crash Logs",
           onPress: async () => {
@@ -394,7 +392,7 @@ export default function SettingsScreen() {
             setLogContent(logs);
             setShowLogModal(true);
           },
-        })}
+        })} */}
       </View>
 
       {/* Reminder Config Modal */}
@@ -542,7 +540,7 @@ export default function SettingsScreen() {
             <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: spacing.md }}>
               Path: {getLogFilePath()}
             </Text>
-            
+
             <ScrollView style={{ width: "100%", maxHeight: 300, backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md }}>
               <Text style={{ fontSize: 11, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", color: colors.textPrimary }}>
                 {logContent}
