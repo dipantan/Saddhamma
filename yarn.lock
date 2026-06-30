@@ -3340,6 +3340,11 @@ expo-server@^56.0.4:
   resolved "https://registry.yarnpkg.com/expo-server/-/expo-server-56.0.4.tgz#b3c60b3a0c8949c2c73c7576a80db7998a1ce57f"
   integrity sha512-4dJ57KuAwDl7eQGD6aG9kTzBIftWAfHH1+6Zxy7NcPCBrKYis3/H5enGUz1asH8HHhONXfJ5BdJqfEWAEAgWxA==
 
+expo-speech@~56.0.3:
+  version "56.0.3"
+  resolved "https://registry.yarnpkg.com/expo-speech/-/expo-speech-56.0.3.tgz#c691d98ea742c62d64af9c9ebf42b2cfbaaf8e7a"
+  integrity sha512-NkO7RX+BgJCALrjL/6C9AsyenkmJD9EBDIKAQmSN6BLrcXxwZnyQ9TSo/ZTSDSY9Y28aStXHfEBQogt2qUrP9w==
+
 expo-splash-screen@~56.0.10:
   version "56.0.10"
   resolved "https://registry.yarnpkg.com/expo-splash-screen/-/expo-splash-screen-56.0.10.tgz#278293531e66b7841eb3dff12ed303e4f1343e27"

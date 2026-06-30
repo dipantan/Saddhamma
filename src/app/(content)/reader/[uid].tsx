@@ -18,7 +18,8 @@ import { radius, spacing, useTheme } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Speech from "expo-speech";
 import {
   BackHandler,
   FlatList,
@@ -137,6 +138,240 @@ export default function ReaderScreen() {
   const [editingNoteSegmentId, setEditingNoteSegmentId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
   const [isSuttaNoteExpanded, setIsSuttaNoteExpanded] = useState(false);
+
+  // FlatList Ref
+  const flatListRef = useRef<FlatList<any>>(null);
+
+  // Text-To-Speech States
+  const [isTtsActive, setIsTtsActive] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTtsIndex, setCurrentTtsIndex] = useState<number>(0);
+  const [pitch, setPitch] = useState(1.0);
+  const [rate, setRate] = useState(1.0);
+  const [voices, setVoices] = useState<Speech.Voice[]>([]);
+  const [selectedVoice, setSelectedVoice] = useState<Speech.Voice | null>(null);
+  const [isVoicesModalVisible, setIsVoicesModalVisible] = useState(false);
+  const [isTtsSettingsVisible, setIsTtsSettingsVisible] = useState(false);
+
+  // sortedSegments needs to be declared before speakableItems so it can be accessed
+  const sortedSegments = useMemo(() => {
+    if (!data) return [];
+    return Array.from(
+      new Set([
+        ...Object.keys(data.root_text || {}),
+        ...Object.keys(data.translation_text || {}),
+      ]),
+    ).sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+    );
+  }, [data?.root_text, data?.translation_text]);
+
+  // Speakable items selector (English Translation text)
+  const speakableItems = useMemo(() => {
+    if (!data || !data.translation_text) return [];
+
+    const items: { segId: string; text: string; index: number }[] = [];
+
+    sortedSegments.forEach((segId, index) => {
+      const isLegacy = segId.includes(":legacy:");
+      let isHeader = false;
+      let isTitle = false;
+      let isCollection = false;
+
+      if (isLegacy) {
+        const parts = segId.split(":");
+        const tag = parts[2];
+        if (tag === "division") {
+          isHeader = true;
+          isCollection = true;
+        } else if (tag === "h1") {
+          isHeader = true;
+          isTitle = true;
+        } else if (tag === "h2" || tag === "h3") {
+          isHeader = true;
+        }
+      } else {
+        const segmentNum = segId.split(":")[1];
+        isHeader = segmentNum?.startsWith("0.");
+        if (isHeader) {
+          isCollection = segmentNum === "0.1";
+          isTitle = segmentNum === "0.2";
+        }
+      }
+
+      const trans = data.translation_text[segId];
+      if (trans && trans.trim()) {
+        const cleanText = stripHtml(trans).trim();
+        if (cleanText) {
+          items.push({
+            segId,
+            text: cleanText,
+            index,
+          });
+        }
+      }
+    });
+
+    return items;
+  }, [data, sortedSegments]);
+
+  const currentPlayingSegId = useMemo(() => {
+    if (!isTtsActive || currentTtsIndex < 0 || currentTtsIndex >= speakableItems.length) {
+      return null;
+    }
+    return speakableItems[currentTtsIndex].segId;
+  }, [isTtsActive, currentTtsIndex, speakableItems]);
+
+  // Load voices available on device
+  useEffect(() => {
+    let isMounted = true;
+    const fetchVoices = async () => {
+      try {
+        const availableVoices = await Speech.getAvailableVoicesAsync();
+        if (!isMounted) return;
+        const englishVoices = availableVoices.filter(
+          (v) => v.language.toLowerCase().startsWith("en") || v.language.toLowerCase().includes("en")
+        );
+        englishVoices.sort((a, b) => a.name.localeCompare(b.name));
+        setVoices(englishVoices);
+
+        if (englishVoices.length > 0) {
+          const defaultVoice = englishVoices.find((v) => v.quality === "Enhanced") || englishVoices[0];
+          setSelectedVoice(defaultVoice);
+        }
+      } catch (err) {
+        console.error("Error loading voices:", err);
+      }
+    };
+    if (isTtsActive || data) {
+      fetchVoices();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [isTtsActive, data]);
+
+  useEffect(() => {
+    return () => {
+      Speech.stop().catch(err => console.error("Error stopping Speech on unmount:", err));
+    };
+  }, []);
+
+  // Helper ref to avoid recursion ESLint warnings inside speakCurrentItem
+  const speakCurrentItemRef = useRef<(index: number) => void>(() => {});
+
+  const speakCurrentItem = useCallback(async (indexToSpeak: number) => {
+    if (indexToSpeak < 0 || indexToSpeak >= speakableItems.length) {
+      setIsPlaying(false);
+      return;
+    }
+
+    const item = speakableItems[indexToSpeak];
+    setCurrentTtsIndex(indexToSpeak);
+
+    try {
+      flatListRef.current?.scrollToIndex({
+        index: item.index,
+        animated: true,
+        viewPosition: 0.3,
+      });
+    } catch (err) {
+      console.warn("FlatList scrollToIndex failed:", err);
+    }
+
+    await Speech.stop();
+
+    Speech.speak(item.text, {
+      pitch,
+      rate,
+      voice: selectedVoice?.identifier,
+      onDone: () => {
+        speakCurrentItemRef.current(indexToSpeak + 1);
+      },
+      onStopped: () => {
+      },
+      onError: (err) => {
+        console.error("Speech speak error:", err);
+        setIsPlaying(false);
+      },
+    });
+  }, [speakableItems, pitch, rate, selectedVoice]);
+
+  // Keep ref updated
+  useEffect(() => {
+    speakCurrentItemRef.current = speakCurrentItem;
+  }, [speakCurrentItem]);
+
+  const handlePlayPause = useCallback(async () => {
+    if (isPlaying) {
+      await Speech.stop();
+      setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+      speakCurrentItem(currentTtsIndex);
+    }
+  }, [isPlaying, currentTtsIndex, speakCurrentItem]);
+
+  const handleNextSegment = useCallback(() => {
+    if (currentTtsIndex < speakableItems.length - 1) {
+      const nextIndex = currentTtsIndex + 1;
+      setCurrentTtsIndex(nextIndex);
+      if (isPlaying) {
+        speakCurrentItem(nextIndex);
+      } else {
+        const item = speakableItems[nextIndex];
+        try {
+          flatListRef.current?.scrollToIndex({
+            index: item.index,
+            animated: true,
+            viewPosition: 0.3,
+          });
+        } catch (err) {
+          console.warn("FlatList scrollToIndex failed:", err);
+        }
+      }
+    }
+  }, [currentTtsIndex, speakableItems, isPlaying, speakCurrentItem]);
+
+  const handlePrevSegment = useCallback(() => {
+    if (currentTtsIndex > 0) {
+      const prevIndex = currentTtsIndex - 1;
+      setCurrentTtsIndex(prevIndex);
+      if (isPlaying) {
+        speakCurrentItem(prevIndex);
+      } else {
+        const item = speakableItems[prevIndex];
+        try {
+          flatListRef.current?.scrollToIndex({
+            index: item.index,
+            animated: true,
+            viewPosition: 0.3,
+          });
+        } catch (err) {
+          console.warn("FlatList scrollToIndex failed:", err);
+        }
+      }
+    }
+  }, [currentTtsIndex, speakableItems, isPlaying, speakCurrentItem]);
+
+  const handleCloseTts = useCallback(async () => {
+    await Speech.stop();
+    setIsPlaying(false);
+    setIsTtsActive(false);
+  }, []);
+
+  const handleActivateTts = useCallback(() => {
+    setIsTtsActive(true);
+    setIsPlaying(true);
+    speakCurrentItem(0);
+  }, [speakCurrentItem]);
+
+  // Re-run segment speaker if settings change on the fly while playing
+  useEffect(() => {
+    if (isPlaying && isTtsActive) {
+      speakCurrentItem(currentTtsIndex);
+    }
+  }, [selectedVoice, pitch, rate, isPlaying, isTtsActive, currentTtsIndex, speakCurrentItem]);
 
   const resolvedRootLang = useMemo(() => {
     if (data?.root_lang) return data.root_lang;
@@ -388,18 +623,6 @@ export default function ReaderScreen() {
     return Object.keys(data.translation_text).some(k => k.includes(":legacy"));
   }, [data?.translation_text]);
 
-  const sortedSegments = useMemo(() => {
-    if (!data) return [];
-    return Array.from(
-      new Set([
-        ...Object.keys(data.root_text || {}),
-        ...Object.keys(data.translation_text || {}),
-      ]),
-    ).sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
-    );
-  }, [data?.root_text, data?.translation_text]);
-
   const renderSegment = useCallback(
     ({ item: segId }: { item: string }) => (
       <SegmentItem
@@ -418,9 +641,10 @@ export default function ReaderScreen() {
         userNote={userNotes[segId]}
         onSegmentPress={setActiveSegmentId}
         authorUid={data?.author_uid}
+        isPlaying={segId === currentPlayingSegId}
       />
     ),
-    [data, colors, fontSize, showPali, showTranslation, showSegments, showComments, hasTranslation, userAnnotations, userNotes],
+    [data, colors, fontSize, showPali, showTranslation, showSegments, showComments, hasTranslation, userAnnotations, userNotes, currentPlayingSegId],
   );
 
   return (
@@ -512,13 +736,28 @@ export default function ReaderScreen() {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={sortedSegments}
           renderItem={renderSegment}
           keyExtractor={(item) => item}
           contentContainerStyle={styles.listContent}
-        initialNumToRender={15}
-        maxToRenderPerBatch={10}
-        windowSize={10}
+          extraData={currentPlayingSegId}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          onScrollToIndexFailed={(info) => {
+            flatListRef.current?.scrollToOffset({
+              offset: info.highestMeasuredFrameIndex * 120,
+              animated: false,
+            });
+            setTimeout(() => {
+              try {
+                flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
+              } catch (e) {
+                console.warn("Failed to retry scrollToIndex:", e);
+              }
+            }, 100);
+          }}
         ListHeaderComponent={
           <View>
             {!hasTranslation && data && (
@@ -1013,6 +1252,237 @@ export default function ReaderScreen() {
           </Pressable>
         </Modal>
       )}
+
+      {/* Text-to-Speech FAB Button */}
+      {!isTtsActive && !loading && !error && data && speakableItems.length > 0 && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.ttsFab,
+            {
+              backgroundColor: colors.primary,
+              bottom: insets.bottom + spacing.lg,
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}
+          onPress={handleActivateTts}
+        >
+          <Ionicons name="volume-medium-outline" size={24} color={colors.textInverse} />
+        </Pressable>
+      )}
+
+      {/* Floating Audio Controller Panel */}
+      {isTtsActive && (
+        <View
+          style={[
+            styles.ttsControllerPanel,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.divider,
+            },
+          ]}
+        >
+          <View style={styles.ttsHeaderRow}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="headset-outline" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+              <Text style={[styles.ttsProgressText, { color: colors.textSecondary }]}>
+                Segment {currentTtsIndex + 1} of {speakableItems.length}
+              </Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <Pressable
+                onPress={() => setIsTtsSettingsVisible(!isTtsSettingsVisible)}
+                hitSlop={10}
+              >
+                <Ionicons
+                  name={isTtsSettingsVisible ? "options" : "options-outline"}
+                  size={20}
+                  color={isTtsSettingsVisible ? colors.primary : colors.textSecondary}
+                />
+              </Pressable>
+              <Pressable onPress={handleCloseTts} hitSlop={10}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Settings Sub-Panel for Pitch, Speed & Voice */}
+          {isTtsSettingsVisible && (
+            <View style={[styles.ttsSettingsPanel, { borderTopColor: colors.divider }]}>
+              {/* Pitch Controls */}
+              <View style={styles.ttsSettingRow}>
+                <Text style={[styles.ttsSettingLabel, { color: colors.textSecondary }]}>Pitch</Text>
+                <View style={styles.ttsValueAdjuster}>
+                  <Pressable
+                    style={[styles.ttsStepBtn, { backgroundColor: colors.surfaceVariant }]}
+                    onPress={() => setPitch(prev => Math.max(0.5, parseFloat((prev - 0.1).toFixed(1))))}
+                  >
+                    <Text style={[styles.ttsStepBtnText, { color: colors.textPrimary }]}>-</Text>
+                  </Pressable>
+                  <Text style={[styles.ttsValueText, { color: colors.textPrimary }]}>{pitch.toFixed(1)}x</Text>
+                  <Pressable
+                    style={[styles.ttsStepBtn, { backgroundColor: colors.surfaceVariant }]}
+                    onPress={() => setPitch(prev => Math.min(2.0, parseFloat((prev + 0.1).toFixed(1))))}
+                  >
+                    <Text style={[styles.ttsStepBtnText, { color: colors.textPrimary }]}>+</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Speed/Rate Controls */}
+              <View style={styles.ttsSettingRow}>
+                <Text style={[styles.ttsSettingLabel, { color: colors.textSecondary }]}>Speed</Text>
+                <View style={styles.ttsValueAdjuster}>
+                  <Pressable
+                    style={[styles.ttsStepBtn, { backgroundColor: colors.surfaceVariant }]}
+                    onPress={() => setRate(prev => Math.max(0.5, parseFloat((prev - 0.1).toFixed(1))))}
+                  >
+                    <Text style={[styles.ttsStepBtnText, { color: colors.textPrimary }]}>-</Text>
+                  </Pressable>
+                  <Text style={[styles.ttsValueText, { color: colors.textPrimary }]}>{rate.toFixed(1)}x</Text>
+                  <Pressable
+                    style={[styles.ttsStepBtn, { backgroundColor: colors.surfaceVariant }]}
+                    onPress={() => setRate(prev => Math.min(2.0, parseFloat((prev + 0.1).toFixed(1))))}
+                  >
+                    <Text style={[styles.ttsStepBtnText, { color: colors.textPrimary }]}>+</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Voice Selector Row */}
+              <View style={styles.ttsSettingRow}>
+                <Text style={[styles.ttsSettingLabel, { color: colors.textSecondary }]}>Voice</Text>
+                <Pressable
+                  style={[styles.ttsVoiceBtn, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}
+                  onPress={() => setIsVoicesModalVisible(true)}
+                >
+                  <Text style={[styles.ttsVoiceBtnText, { color: colors.textPrimary }]} numberOfLines={1}>
+                    {selectedVoice ? selectedVoice.name : "System Default"}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {/* Primary Controls Row */}
+          <View style={[styles.ttsControlsRow, isTtsSettingsVisible && { borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: spacing.sm }]}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.ttsControlBtn,
+                { opacity: currentTtsIndex === 0 || pressed ? 0.5 : 1 }
+              ]}
+              disabled={currentTtsIndex === 0}
+              onPress={handlePrevSegment}
+            >
+              <Ionicons name="play-skip-back" size={24} color={colors.textPrimary} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.ttsPlayBtn,
+                { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }
+              ]}
+              onPress={handlePlayPause}
+            >
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={28}
+                color={colors.textInverse}
+                style={{ marginLeft: isPlaying ? 0 : 2 }}
+              />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.ttsControlBtn,
+                { opacity: currentTtsIndex === speakableItems.length - 1 || pressed ? 0.5 : 1 }
+              ]}
+              disabled={currentTtsIndex === speakableItems.length - 1}
+              onPress={handleNextSegment}
+            >
+              <Ionicons name="play-skip-forward" size={24} color={colors.textPrimary} />
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Voice Selection Modal */}
+      {isVoicesModalVisible && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setIsVoicesModalVisible(false)}
+        >
+          <Pressable style={styles.sheetOverlay} onPress={() => setIsVoicesModalVisible(false)}>
+            <Pressable style={[styles.menuModalContent, { backgroundColor: colors.surface, maxHeight: "50%" }]}>
+              <View style={styles.sheetHeader}>
+                <Text style={[styles.sheetTitle, { color: colors.textPrimary }]}>Select English Voice</Text>
+                <Pressable onPress={() => setIsVoicesModalVisible(false)} hitSlop={10}>
+                  <Ionicons name="close" size={24} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+
+              {voices.length === 0 ? (
+                <View style={{ paddingVertical: spacing.xl, alignItems: "center" }}>
+                  <Text style={{ color: colors.textSecondary }}>No English voices found on device.</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={voices}
+                  keyExtractor={(item) => item.identifier}
+                  renderItem={({ item }) => {
+                    const isSelected = selectedVoice?.identifier === item.identifier;
+                    const lang = item.language.toLowerCase();
+                    let flag = "🌐";
+                    let country = "EN";
+                    if (lang.includes("us")) { flag = "🇺🇸"; country = "US"; }
+                    else if (lang.includes("gb") || lang.includes("uk")) { flag = "🇬🇧"; country = "UK"; }
+                    else if (lang.includes("au")) { flag = "🇦🇺"; country = "AU"; }
+                    else if (lang.includes("in")) { flag = "🇮🇳"; country = "IN"; }
+                    else if (lang.includes("ca")) { flag = "🇨🇦"; country = "CA"; }
+                    else if (lang.includes("ie")) { flag = "🇮🇪"; country = "IE"; }
+                    else if (lang.includes("za")) { flag = "🇿🇦"; country = "ZA"; }
+
+                    return (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.menuOptionRow,
+                          {
+                            opacity: pressed ? 0.7 : 1,
+                            backgroundColor: isSelected ? colors.primary + "12" : "transparent",
+                            borderRadius: radius.md,
+                            paddingHorizontal: spacing.sm,
+                            marginVertical: 2,
+                          }
+                        ]}
+                        onPress={() => {
+                          setSelectedVoice(item);
+                          setIsVoicesModalVisible(false);
+                        }}
+                      >
+                        <Text style={{ fontSize: 20, marginRight: spacing.sm }}>{flag}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.menuOptionText, { color: colors.textPrimary, fontWeight: isSelected ? "700" : "400" }]}>
+                            {item.name}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                            {country} ({item.language}) {item.quality && `• ${item.quality}`}
+                          </Text>
+                        </View>
+                        {isSelected && (
+                          <Ionicons name="checkmark" size={18} color={colors.primary} />
+                        )}
+                      </Pressable>
+                    );
+                  }}
+                  contentContainerStyle={{ paddingBottom: spacing.xl }}
+                />
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -1033,6 +1503,7 @@ interface SegmentItemProps {
   userNote?: string;
   onSegmentPress: (segId: string) => void;
   authorUid?: string;
+  isPlaying?: boolean;
 }
 
 const SegmentItem = React.memo(
@@ -1052,6 +1523,7 @@ const SegmentItem = React.memo(
     userNote,
     onSegmentPress,
     authorUid,
+    isPlaying = false,
   }: SegmentItemProps) => {
     const [isNoteExpanded, setIsNoteExpanded] = useState(false);
     const isLegacy = segId.includes(":legacy:");
@@ -1060,6 +1532,8 @@ const SegmentItem = React.memo(
     let isTitle = false;
     let isSubtitle = false;
     let segmentNum = segId.split(":")[1];
+
+    const isDark = colors.background === "#121212" || colors.background === "#000000";
 
     if (isLegacy) {
       const parts = segId.split(":");
@@ -1091,7 +1565,14 @@ const SegmentItem = React.memo(
     if (isHeader) {
       return (
         <View
-          style={styles.headerSegment}
+          style={[
+            styles.headerSegment,
+            isPlaying && {
+              backgroundColor: isDark ? "rgba(32, 138, 239, 0.15)" : "rgba(32, 138, 239, 0.08)",
+              borderRadius: radius.md,
+              paddingHorizontal: spacing.md,
+            }
+          ]}
         >
           <Text style={{ textAlign: "center", width: "100%" }}>
             {isCollection && displayTrans && (
@@ -1173,7 +1654,6 @@ const SegmentItem = React.memo(
     }
 
     const isDuplicate = isDuplicateText(root, displayTrans);
-    const isDark = colors.background === "#121212" || colors.background === "#000000";
 
     const getHighlightBg = (colorName?: string) => {
       switch (colorName) {
@@ -1206,7 +1686,12 @@ const SegmentItem = React.memo(
         style={({ pressed }) => [
           styles.bodySegment,
           {
-            backgroundColor: highlightBg ? highlightBg : (pressed ? colors.surfaceVariant : "transparent"),
+            backgroundColor: isPlaying
+              ? (isDark ? "rgba(32, 138, 239, 0.18)" : "rgba(32, 138, 239, 0.1)")
+              : (highlightBg ? highlightBg : (pressed ? colors.surfaceVariant : "transparent")),
+            borderLeftWidth: isPlaying ? 4 : 0,
+            borderLeftColor: colors.primary,
+            paddingLeft: isPlaying ? spacing.sm - 4 : spacing.sm,
           }
         ]}
       >
@@ -1628,15 +2113,121 @@ const styles = StyleSheet.create({
     minWidth: 40,
     textAlign: "center",
   },
-  retryButton: {
-    marginTop: spacing.xl,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
+  ttsFab: {
+    position: "absolute",
+    right: spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4.65,
+    zIndex: 99,
   },
-  retryButtonText: {
-    fontSize: 15,
+  ttsControllerPanel: {
+    position: "absolute",
+    left: spacing.md,
+    right: spacing.md,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    borderWidth: 1,
+    zIndex: 99,
+  },
+  ttsHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  ttsProgressText: {
+    fontSize: 12,
     fontWeight: "600",
+  },
+  ttsSettingsPanel: {
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  ttsSettingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  ttsSettingLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  ttsValueAdjuster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  ttsStepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ttsStepBtnText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  ttsValueText: {
+    fontSize: 13,
+    fontWeight: "600",
+    minWidth: 36,
+    textAlign: "center",
+  },
+  ttsVoiceBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    minWidth: 140,
+    maxWidth: 200,
+  },
+  ttsVoiceBtnText: {
+    fontSize: 12,
+    fontWeight: "500",
+    marginRight: 4,
+    flex: 1,
+  },
+  ttsControlsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.xxl,
+    marginVertical: spacing.xs,
+  },
+  ttsControlBtn: {
+    padding: spacing.sm,
+  },
+  ttsPlayBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
 });
 
