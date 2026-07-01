@@ -71,12 +71,43 @@ async function main() {
     }
     const apkFileName = `Saddhamma-${tag}.apk`;
     const apkPath = path.join(tempDir, apkFileName);
-    const genericApkPath = path.join(tempDir, 'Saddhamma.apk');
 
     console.log(`📥 Downloading APK to ${apkPath}...`);
     await downloadFile(apkUrl, apkPath);
-    fs.copyFileSync(apkPath, genericApkPath);
     console.log(`✅ Download complete! File size: ${(fs.statSync(apkPath).size / (1024 * 1024)).toFixed(2)} MB\n`);
+
+    // Update docs/index.html fallback link
+    const indexHtmlPath = path.join(__dirname, '../docs/index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+      console.log(`📝 Updating fallback download link in docs/index.html...`);
+      let html = fs.readFileSync(indexHtmlPath, 'utf8');
+      
+      const newHref = `https://github.com/${REPO}/releases/download/${tag}/${apkFileName}`;
+      const updatedHtml = html.replace(
+        /(id="download-apk-btn"\s+href=")[^"]*(")/,
+        `$1${newHref}$2`
+      );
+      
+      if (html !== updatedHtml) {
+        fs.writeFileSync(indexHtmlPath, updatedHtml, 'utf8');
+        console.log(`✅ Updated docs/index.html fallback link to: ${newHref}`);
+        
+        // Commit and push the updated docs/index.html
+        try {
+          console.log('💾 Committing and pushing docs/index.html changes...');
+          execSync('git add docs/index.html', { stdio: 'inherit' });
+          execSync(`git commit -m "docs: update download link to ${tag}" docs/index.html`, { stdio: 'inherit' });
+          execSync('git push', { stdio: 'inherit' });
+          console.log('✅ Changes pushed to repository.');
+        } catch (gitErr) {
+          console.warn('⚠️ Warning: Failed to commit/push docs/index.html changes. You may need to push manually.', gitErr.message);
+        }
+      } else {
+        console.log(`ℹ️ Fallback download link in docs/index.html was already up to date.`);
+      }
+    } else {
+      console.warn(`⚠️ Warning: docs/index.html not found at ${indexHtmlPath}`);
+    }
 
     console.log(`🚀 Publishing release to GitHub repository (${REPO})...`);
     
@@ -94,11 +125,11 @@ async function main() {
       const notes = `Automated release for version ${version} (build #${buildNum}). Generated from Expo EAS build artifact.`;
       
       console.log(`Creating release ${tag}...`);
-      const createRes = spawnSync('gh', ['release', 'create', tag, apkPath, genericApkPath, '--repo', REPO, '--title', releaseTitle, '--notes', notes], { stdio: 'inherit' });
+      const createRes = spawnSync('gh', ['release', 'create', tag, apkPath, '--repo', REPO, '--title', releaseTitle, '--notes', notes], { stdio: 'inherit' });
       
       if (createRes.status !== 0) {
         console.log(`\nℹ️ Release tag ${tag} already exists or create skipped. Uploading APK assets to existing release...`);
-        const uploadRes = spawnSync('gh', ['release', 'upload', tag, apkPath, genericApkPath, '--repo', REPO, '--clobber'], { stdio: 'inherit' });
+        const uploadRes = spawnSync('gh', ['release', 'upload', tag, apkPath, '--repo', REPO, '--clobber'], { stdio: 'inherit' });
         if (uploadRes.status === 0) {
           console.log(`\n🎉 APK assets successfully updated on existing GitHub release ${tag}!`);
         } else {
