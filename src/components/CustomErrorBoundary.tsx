@@ -55,7 +55,7 @@ export function CustomErrorBoundary({ error, retry }: ErrorBoundaryProps) {
         </Text>
         
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          An unexpected error occurred in this screen. Don't worry, your data is safe. You can send a crash report directly to the developer to help fix it.
+          {"An unexpected error occurred in this screen. Don't worry, your data is safe. You can send a crash report directly to the developer to help fix it."}
         </Text>
 
         <View style={[styles.errorBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
