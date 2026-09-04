@@ -7,10 +7,7 @@ import {
 } from "@/services/DataService";
 import { initGlobalErrorHandler } from "@/services/LoggerService";
 import { ThemeProvider, useTheme } from "@/theme";
-import { CustomErrorBoundary } from "@/components";
 import { Stack, useRouter } from "expo-router";
-
-export { CustomErrorBoundary as ErrorBoundary } from "@/components";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import * as Notifications from "expo-notifications";
@@ -18,6 +15,8 @@ import { useEffect, useState } from "react";
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Snackbar } from "react-native-snackbar";
+
+export { CustomErrorBoundary as ErrorBoundary } from "@/components";
 
 initGlobalErrorHandler();
 

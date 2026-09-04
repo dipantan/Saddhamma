@@ -49,7 +49,7 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const handleSync = async () => {
+  const handleSync = useCallback(async () => {
     setIsSyncing(true);
     setSyncError(null);
     setElapsedTime(0);
@@ -77,7 +77,7 @@ export default function HomeScreen() {
       clearInterval(timer);
       setIsSyncing(false);
     }
-  };
+  }, [loadCategories]);
 
   const checkInitialState = useCallback(async () => {
     const ready = await isDataReady();
@@ -92,7 +92,7 @@ export default function HomeScreen() {
         handleSync();
       }).catch(err => console.log("Background update check ignored:", err));
     }
-  }, [loadCategories]);
+  }, [loadCategories, handleSync]);
 
   useEffect(() => {
     let isMounted = true;

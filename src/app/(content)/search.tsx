@@ -63,12 +63,12 @@ export default function SearchScreen() {
     debounceRef.current = setTimeout(() => {
       performSearch(text);
     }, SEARCH_DEBOUNCE_MS);
-  }, []);
+  }, [performSearch]);
 
   const handleSubmit = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     performSearch(query);
-  }, [query]);
+  }, [query, performSearch]);
 
 
   const renderSnippetText = (text: string, textColor: string, highlightColor: string) => {

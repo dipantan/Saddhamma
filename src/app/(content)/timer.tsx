@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
+  AppState,
   View,
   Text,
   StyleSheet,
@@ -93,8 +94,22 @@ export default function MeditationTimerScreen() {
     }).start();
   }, [scaleAnim]);
 
+  // Wall-clock time tracking references
+  const startTimeRef = useRef<number | null>(null);
+  const accumulatedElapsedRef = useRef<number>(0);
+  const lastElapsedSecRef = useRef<number>(0);
+
+  const getElapsedSeconds = useCallback(() => {
+    const currentSegmentMs = startTimeRef.current ? Date.now() - startTimeRef.current : 0;
+    const totalMs = accumulatedElapsedRef.current + currentSegmentMs;
+    return Math.floor(totalMs / 1000);
+  }, []);
+
   // Start Timer
   const handleStart = () => {
+    accumulatedElapsedRef.current = 0;
+    startTimeRef.current = Date.now();
+    lastElapsedSecRef.current = 0;
     setIsRunning(true);
     setIsPaused(false);
     startBreathingAnimation();
@@ -102,20 +117,29 @@ export default function MeditationTimerScreen() {
 
   // Pause Timer
   const handlePause = () => {
+    if (startTimeRef.current) {
+      accumulatedElapsedRef.current += Date.now() - startTimeRef.current;
+      startTimeRef.current = null;
+    }
     setIsPaused(true);
     stopBreathingAnimation();
   };
 
   // Resume Timer
   const handleResume = () => {
+    startTimeRef.current = Date.now();
     setIsPaused(false);
     startBreathingAnimation();
   };
 
   // Cancel/Reset Timer
   const handleCancel = () => {
-    const elapsedSeconds = selectedMinutes * 60 - timeLeft;
-    const elapsedMinutes = Math.round(elapsedSeconds / 60);
+    const elapsedSec = getElapsedSeconds();
+    const elapsedMinutes = Math.round(elapsedSec / 60);
+
+    startTimeRef.current = null;
+    accumulatedElapsedRef.current = 0;
+    lastElapsedSecRef.current = 0;
 
     setIsRunning(false);
     setIsPaused(false);
@@ -130,8 +154,12 @@ export default function MeditationTimerScreen() {
 
   // Finish Timer (Overtime Completion)
   const handleFinish = () => {
-    const elapsedSeconds = selectedMinutes * 60 - timeLeft;
-    const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
+    const elapsedSec = getElapsedSeconds();
+    const elapsedMinutes = Math.max(1, Math.round(elapsedSec / 60));
+
+    startTimeRef.current = null;
+    accumulatedElapsedRef.current = 0;
+    lastElapsedSecRef.current = 0;
 
     setIsRunning(false);
     setIsPaused(false);
@@ -140,47 +168,61 @@ export default function MeditationTimerScreen() {
     setShowLogModal(true);
   };
 
-  // Timer Tick Effect
+  // Timer Tick Effect (Wall-clock accurate across screen lock & app backgrounding)
   useEffect(() => {
     if (isRunning && !isPaused) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          const nextTimeLeft = prev - 1;
+      const updateTick = () => {
+        const elapsedSec = getElapsedSeconds();
+        const prevElapsedSec = lastElapsedSecRef.current;
+        lastElapsedSecRef.current = elapsedSec;
 
-          // Vibration completion trigger when passing from 1 to 0
-          if (prev === 1) {
-            Vibration.vibrate([0, 500, 250, 500, 250, 500]);
+        const totalTargetSec = selectedMinutes * 60;
+        const newTimeLeft = totalTargetSec - elapsedSec;
+        setTimeLeft(newTimeLeft);
+
+        // Completion vibration when passing from positive to <= 0
+        if (prevElapsedSec < totalTargetSec && elapsedSec >= totalTargetSec) {
+          Vibration.vibrate([0, 500, 250, 500, 250, 500]);
+        }
+
+        // Halfway Bell
+        if (halfwayBell) {
+          const halfSec = Math.floor(totalTargetSec / 2);
+          if (prevElapsedSec < halfSec && elapsedSec >= halfSec) {
+            Vibration.vibrate([0, 250, 150, 250]);
           }
+        }
 
-          // Vibration triggers for bells (only during normal countdown)
-          if (nextTimeLeft > 0) {
-            const totalSeconds = selectedMinutes * 60;
-            const elapsed = totalSeconds - nextTimeLeft;
-            // Halfway Bell
-            if (halfwayBell && elapsed === Math.floor(totalSeconds / 2)) {
-              Vibration.vibrate([0, 250, 150, 250]);
-            }
-            // Interval Bell
-            if (intervalMinutes > 0 && elapsed % (intervalMinutes * 60) === 0) {
-              Vibration.vibrate([0, 150, 100, 150]);
-            }
+        // Interval Bell
+        if (intervalMinutes > 0) {
+          const intervalSec = intervalMinutes * 60;
+          const prevIntervals = Math.floor(prevElapsedSec / intervalSec);
+          const currentIntervals = Math.floor(elapsedSec / intervalSec);
+          if (currentIntervals > prevIntervals && elapsedSec < totalTargetSec) {
+            Vibration.vibrate([0, 150, 100, 150]);
           }
+        }
+      };
 
-          return nextTimeLeft;
-        });
-      }, 1000);
+      updateTick();
+      timerRef.current = setInterval(updateTick, 1000);
+
+      const subscription = AppState.addEventListener("change", (nextState) => {
+        if (nextState === "active") {
+          updateTick();
+        }
+      });
+
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        subscription.remove();
+      };
     } else {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
     }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [isRunning, isPaused, selectedMinutes, stopBreathingAnimation, halfwayBell, intervalMinutes]);
+  }, [isRunning, isPaused, selectedMinutes, halfwayBell, intervalMinutes, getElapsedSeconds]);
 
   // Clean up animation on unmount
   useEffect(() => {

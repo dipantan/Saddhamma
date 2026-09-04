@@ -164,7 +164,7 @@ export default function ReaderScreen() {
     ).sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
     );
-  }, [data?.root_text, data?.translation_text]);
+  }, [data]);
 
   // Speakable items selector (English Translation text)
   const speakableItems = useMemo(() => {
@@ -173,32 +173,6 @@ export default function ReaderScreen() {
     const items: { segId: string; text: string; index: number }[] = [];
 
     sortedSegments.forEach((segId, index) => {
-      const isLegacy = segId.includes(":legacy:");
-      let isHeader = false;
-      let isTitle = false;
-      let isCollection = false;
-
-      if (isLegacy) {
-        const parts = segId.split(":");
-        const tag = parts[2];
-        if (tag === "division") {
-          isHeader = true;
-          isCollection = true;
-        } else if (tag === "h1") {
-          isHeader = true;
-          isTitle = true;
-        } else if (tag === "h2" || tag === "h3") {
-          isHeader = true;
-        }
-      } else {
-        const segmentNum = segId.split(":")[1];
-        isHeader = segmentNum?.startsWith("0.");
-        if (isHeader) {
-          isCollection = segmentNum === "0.1";
-          isTitle = segmentNum === "0.2";
-        }
-      }
-
       const trans = data.translation_text[segId];
       if (trans && trans.trim()) {
         const cleanText = stripHtml(trans).trim();
@@ -366,12 +340,30 @@ export default function ReaderScreen() {
     speakCurrentItem(0);
   }, [speakCurrentItem]);
 
-  // Re-run segment speaker if settings change on the fly while playing
+  // Re-run segment speaker if voice settings change on the fly while playing
+  const prevVoiceConfigRef = useRef({
+    voiceId: selectedVoice?.identifier,
+    pitch,
+    rate,
+  });
+
   useEffect(() => {
-    if (isPlaying && isTtsActive) {
-      speakCurrentItem(currentTtsIndex);
+    const prev = prevVoiceConfigRef.current;
+    const voiceChanged =
+      prev.voiceId !== selectedVoice?.identifier ||
+      prev.pitch !== pitch ||
+      prev.rate !== rate;
+
+    prevVoiceConfigRef.current = {
+      voiceId: selectedVoice?.identifier,
+      pitch,
+      rate,
+    };
+
+    if (voiceChanged && isPlaying && isTtsActive) {
+      speakCurrentItemRef.current(currentTtsIndex);
     }
-  }, [selectedVoice, pitch, rate, isPlaying, isTtsActive, currentTtsIndex, speakCurrentItem]);
+  }, [selectedVoice, pitch, rate, isPlaying, isTtsActive, currentTtsIndex]);
 
   const resolvedRootLang = useMemo(() => {
     if (data?.root_lang) return data.root_lang;
@@ -464,7 +456,7 @@ export default function ReaderScreen() {
     if (!loading) {
       saveSettings({ displayMode, showSegments, showComments, fontSize });
     }
-  }, [displayMode, showSegments, showComments, fontSize]);
+  }, [displayMode, showSegments, showComments, fontSize, loading]);
 
   useEffect(() => {
     const backAction = () => {
@@ -616,12 +608,12 @@ export default function ReaderScreen() {
   const hasTranslation = useMemo(() => {
     if (!data || !data.translation_text) return false;
     return Object.keys(data.translation_text).length > 0;
-  }, [data?.translation_text]);
+  }, [data]);
 
   const isLegacyTranslation = useMemo(() => {
     if (!data || !data.translation_text) return false;
     return Object.keys(data.translation_text).some(k => k.includes(":legacy"));
-  }, [data?.translation_text]);
+  }, [data]);
 
   const renderSegment = useCallback(
     ({ item: segId }: { item: string }) => (
@@ -962,7 +954,7 @@ export default function ReaderScreen() {
                   </Pressable>
                 </View>
 
-                {(userAnnotations[activeSegmentId] || userAnnotations[activeSegmentId]?.note || userNotes[activeSegmentId]) && (
+                {(Boolean(userAnnotations[activeSegmentId]) || Boolean(userNotes[activeSegmentId])) && (
                   <View style={{ flexDirection: "row", gap: spacing.sm }}>
                     {userAnnotations[activeSegmentId] && (
                       <Pressable
@@ -1206,6 +1198,14 @@ export default function ReaderScreen() {
                 <View style={[styles.dividerLine, { backgroundColor: colors.divider }]} />
 
                 {/* Sutta Actions */}
+                <Pressable
+                  style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
+                  onPress={handleCopyEntireSutta}
+                >
+                  <Ionicons name="copy-outline" size={20} color={colors.textPrimary} style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuOptionText, { color: colors.textPrimary }]}>Copy Sutta</Text>
+                </Pressable>
+
                 <Pressable
                   style={({ pressed }) => [styles.menuOptionRow, { opacity: pressed ? 0.7 : 1 }]}
                   onPress={handleShareEntireSutta}

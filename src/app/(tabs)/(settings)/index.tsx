@@ -7,7 +7,7 @@ import {
   saveSettings,
   syncSuttaReminders
 } from "@/services/DataService";
-import { getLogFilePath } from "@/services/LoggerService";
+import { getLogFilePath, readLogs } from "@/services/LoggerService";
 import { radius, spacing, useTheme, type ThemeMode } from "@/theme";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -370,6 +370,13 @@ export default function SettingsScreen() {
           onPress: () => router.push("/(tabs)/(settings)/about" as any),
         })}
         {renderSettingRow({
+          icon: "search-outline",
+          label: "Rebuild Search Index",
+          value: isIndexing ? `${status} (${Math.round(progress * 100)}%)` : "Ready",
+          disabled: isIndexing,
+          onPress: handleStartIndexing,
+        })}
+        {renderSettingRow({
           icon: "shield-checkmark-outline",
           label: "Privacy Policy",
           onPress: () => Linking.openURL("https://saddhamma.online/privacy.html"),
@@ -384,7 +391,7 @@ export default function SettingsScreen() {
           label: "Support the Project",
           onPress: () => Linking.openURL("https://saddhamma.online/support.html"),
         })}
-        {/* {renderSettingRow({
+        {renderSettingRow({
           icon: "document-text-outline",
           label: "Diagnostic Crash Logs",
           onPress: async () => {
@@ -392,7 +399,7 @@ export default function SettingsScreen() {
             setLogContent(logs);
             setShowLogModal(true);
           },
-        })} */}
+        })}
       </View>
 
       {/* Reminder Config Modal */}

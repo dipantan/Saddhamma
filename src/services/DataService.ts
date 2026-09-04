@@ -1311,7 +1311,7 @@ function buildFtsQuery(query: string): string {
   if (words.length === 1) {
     // Single word: use prefix match with *
     const escaped = words[0].replace(/"/g, '""');
-    return `"${escaped}" *`;
+    return `"${escaped}"*`;
   }
   // Multiple words: match each word (implicit AND in FTS5)
   return words.map(w => `"${w.replace(/"/g, '""')}"`).join(" ");
