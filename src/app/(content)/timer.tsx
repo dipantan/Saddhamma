@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
+  Alert,
   AppState,
   View,
   Text,
@@ -18,7 +19,6 @@ import { useTheme } from "@/theme";
 import { spacing, radius } from "@/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import { addMeditationLog } from "@/services/DataService";
-import { Snackbar } from "react-native-snackbar";
 
 const SERIF_FONT = Platform.select({
   ios: "Georgia",
@@ -238,18 +238,20 @@ export default function MeditationTimerScreen() {
       await addMeditationLog(actualDurationMinutes, sessionNotes.trim());
       setShowLogModal(false);
       setSessionNotes("");
-      Snackbar.show({
-        text: "Meditation session logged",
-        duration: Snackbar.LENGTH_SHORT,
-      });
-      router.back();
+      Alert.alert(
+        "Session Logged",
+        "Your meditation session has been saved.",
+        [{ text: "OK", onPress: () => router.back() }],
+        { cancelable: true }
+      );
     } catch (error) {
       console.error(error);
-      Snackbar.show({
-        text: "Failed to save meditation log",
-        duration: Snackbar.LENGTH_SHORT,
-        backgroundColor: colors.error,
-      });
+      Alert.alert(
+        "Error",
+        "Failed to save meditation log.",
+        [{ text: "OK" }],
+        { cancelable: true }
+      );
     }
   };
 

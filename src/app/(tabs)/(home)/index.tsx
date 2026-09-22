@@ -32,6 +32,7 @@ export default function HomeScreen() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [showSyncDialog, setShowSyncDialog] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncStage, setSyncStage] = useState<string>("");
   const [categories, setCategories] = useState<any[]>([]);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
@@ -52,6 +53,7 @@ export default function HomeScreen() {
   const handleSync = useCallback(async () => {
     setIsSyncing(true);
     setSyncError(null);
+    setSyncStage("");
     setElapsedTime(0);
     const startTime = Date.now();
     const timer = setInterval(() => {
@@ -62,6 +64,9 @@ export default function HomeScreen() {
       const success = await syncData((p) => {
         setSyncProgress(p.percent);
         setSyncMessage(p.message);
+        if (p.stage) {
+          setSyncStage(p.stage);
+        }
       });
       if (success) {
         setDataLoaded(true);
@@ -260,73 +265,113 @@ export default function HomeScreen() {
       />
 
       {/* Sync Dialog */}
-      <Modal
-        visible={showSyncDialog}
-        transparent
-        animationType="fade"
-        onRequestClose={() => dataLoaded && !isSyncing && setShowSyncDialog(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
-              Sutta Library Sync
-            </Text>
-            
-            <Text style={[styles.modalText, { color: syncError ? colors.error : colors.textSecondary }]}>
-              {syncError ||
-                (isSyncing
-                  ? syncMessage || "Syncing data..."
-                  : "The library needs to be downloaded for offline use.")}
-            </Text>
+      {(() => {
+        const isSearchIndexing = syncStage === "search_indexing" || syncMessage.toLowerCase().includes("search index");
+        const canDismissSyncDialog = !isSyncing ? (dataLoaded || Boolean(syncError)) : isSearchIndexing;
 
-            {isSyncing && (
-              <View style={styles.progressContainer}>
-                {syncProgress === null ? (
-                  <ActivityIndicator color={colors.primary} />
-                ) : (
-                  <View style={[styles.progressBarBase, { backgroundColor: colors.divider }]}>
-                    <View 
-                      style={[
-                        styles.progressBarFill, 
-                        { backgroundColor: colors.primary, width: `${syncProgress * 100}%` }
-                      ]} 
-                    />
+        return (
+          <Modal
+            visible={showSyncDialog}
+            transparent
+            animationType="fade"
+            onRequestClose={() => {
+              if (canDismissSyncDialog) {
+                setShowSyncDialog(false);
+              }
+            }}
+          >
+            <Pressable
+              style={styles.modalOverlay}
+              onPress={() => {
+                if (canDismissSyncDialog) {
+                  setShowSyncDialog(false);
+                }
+              }}
+            >
+              <Pressable
+                style={[styles.modalContent, { backgroundColor: colors.surface }]}
+                onPress={(e) => e.stopPropagation()}
+              >
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                  {isSearchIndexing ? "Library Search Indexing" : "Sutta Library Sync"}
+                </Text>
+                
+                <Text style={[styles.modalText, { color: syncError ? colors.error : colors.textSecondary }]}>
+                  {syncError ||
+                    (isSyncing
+                      ? syncMessage || "Syncing data..."
+                      : "The library needs to be downloaded for offline use.")}
+                </Text>
+
+                {isSyncing && (
+                  <View style={styles.progressContainer}>
+                    {syncProgress === null ? (
+                      <ActivityIndicator color={colors.primary} />
+                    ) : (
+                      <View style={[styles.progressBarBase, { backgroundColor: colors.divider }]}>
+                        <View 
+                          style={[
+                            styles.progressBarFill, 
+                            { backgroundColor: colors.primary, width: `${(syncProgress ?? 0) * 100}%` }
+                          ]} 
+                        />
+                      </View>
+                    )}
+                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+                      {syncProgress !== null
+                        ? `${Math.round(syncProgress * 100)}% Complete (${elapsedTime}s)`
+                        : `Processing… (${elapsedTime}s)`}
+                    </Text>
                   </View>
                 )}
-                <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-                  {syncProgress !== null
-                    ? `${Math.round(syncProgress * 100)}% Complete (${elapsedTime}s)`
-                    : `Processing… (${elapsedTime}s)`}
-                </Text>
-              </View>
-            )}
 
-            <View style={styles.modalButtons}>
-              {!isSyncing && (
-                <Pressable
-                  style={[styles.button, { backgroundColor: colors.primary }]}
-                  onPress={handleSync}
-                >
-                  <Text style={[styles.buttonText, { color: colors.textInverse }]}>
-                    {syncError ? "Try Again" : "Download Now"}
-                  </Text>
-                </Pressable>
-              )}
-              
-              {dataLoaded && !isSyncing && (
-                <Pressable
-                  style={[styles.button, { marginTop: spacing.sm }]}
-                  onPress={() => setShowSyncDialog(false)}
-                >
-                  <Text style={[styles.buttonText, { color: colors.primary }]}>
-                    Cancel
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-          </View>
-        </View>
-      </Modal>
+                <View style={styles.modalButtons}>
+                  {isSyncing ? (
+                    isSearchIndexing ? (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.button,
+                          {
+                            backgroundColor: colors.surfaceVariant,
+                            opacity: pressed ? 0.7 : 1,
+                          },
+                        ]}
+                        onPress={() => setShowSyncDialog(false)}
+                      >
+                        <Text style={[styles.buttonText, { color: colors.textPrimary }]}>
+                          Dismiss (Indexing in background)
+                        </Text>
+                      </Pressable>
+                    ) : null
+                  ) : (
+                    <>
+                      <Pressable
+                        style={[styles.button, { backgroundColor: colors.primary }]}
+                        onPress={handleSync}
+                      >
+                        <Text style={[styles.buttonText, { color: colors.textInverse }]}>
+                          {syncError ? "Try Again" : "Download Now"}
+                        </Text>
+                      </Pressable>
+                      
+                      {dataLoaded && (
+                        <Pressable
+                          style={[styles.button, { marginTop: spacing.sm }]}
+                          onPress={() => setShowSyncDialog(false)}
+                        >
+                          <Text style={[styles.buttonText, { color: colors.primary }]}>
+                            Cancel
+                          </Text>
+                        </Pressable>
+                      )}
+                    </>
+                  )}
+                </View>
+              </Pressable>
+            </Pressable>
+          </Modal>
+        );
+      })()}
     </View>
   );
 }

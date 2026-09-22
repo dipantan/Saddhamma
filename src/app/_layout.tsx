@@ -12,9 +12,8 @@ import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
 import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Snackbar } from "react-native-snackbar";
 
 export { CustomErrorBoundary as ErrorBoundary } from "@/components";
 
@@ -94,8 +93,14 @@ function GlobalProgressBar() {
         animationType="fade"
         onRequestClose={() => setShowModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowModal(false)}
+        >
+          <Pressable 
+            style={[styles.modalContent, { backgroundColor: colors.surface }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
               Library Search Indexing
             </Text>
@@ -129,8 +134,8 @@ function GlobalProgressBar() {
                 Dismiss
               </Text>
             </Pressable>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </>
   );
@@ -171,18 +176,20 @@ function RootNavigator() {
         if (update.isAvailable) {
           await Updates.fetchUpdateAsync();
           
-          Snackbar.show({
-            text: "Update downloaded successfully",
-            duration: Snackbar.LENGTH_INDEFINITE,
-            action: {
-              text: "RESTART",
-              textColor: "#FFD54F",
-              onPress: () => {
-                Snackbar.dismiss();
-                Updates.reloadAsync();
+          Alert.alert(
+            "Update Ready",
+            "An app update has been downloaded. Restart now to apply?",
+            [
+              { text: "Later", style: "cancel" },
+              {
+                text: "Restart",
+                onPress: () => {
+                  Updates.reloadAsync();
+                },
               },
-            },
-          });
+            ],
+            { cancelable: true }
+          );
         }
       } catch (error) {
         console.log(`Error fetching latest Expo update: ${error}`);

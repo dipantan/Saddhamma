@@ -30,7 +30,6 @@ import {
   GradualTrainingCheckIn,
   ReadingLog,
 } from "@/services/DataService";
-import { Snackbar } from "react-native-snackbar";
 
 const SERIF_FONT = Platform.select({
   ios: "Georgia",
@@ -133,17 +132,20 @@ export default function PracticeLogsScreen() {
     try {
       await saveGradualTrainingLog(dateStr, checkIn);
       await loadAllLogs();
-      Snackbar.show({
-        text: `Daily check-in saved for ${dateStr}`,
-        duration: Snackbar.LENGTH_SHORT,
-      });
+      Alert.alert(
+        "Check-in Saved",
+        `Daily check-in saved for ${dateStr}.`,
+        [{ text: "OK" }],
+        { cancelable: true }
+      );
     } catch (error) {
       console.error(error);
-      Snackbar.show({
-        text: "Failed to save daily check-in",
-        duration: Snackbar.LENGTH_SHORT,
-        backgroundColor: colors.error,
-      });
+      Alert.alert(
+        "Error",
+        "Failed to save daily check-in.",
+        [{ text: "OK" }],
+        { cancelable: true }
+      );
     }
   };
 
@@ -174,10 +176,12 @@ export default function PracticeLogsScreen() {
       setManualMinutes("");
       setManualNotes("");
       await loadAllLogs();
-      Snackbar.show({
-        text: "Meditation logged successfully",
-        duration: Snackbar.LENGTH_SHORT,
-      });
+      Alert.alert(
+        "Meditation Logged",
+        "Meditation session logged successfully.",
+        [{ text: "OK" }],
+        { cancelable: true }
+      );
     } catch (error) {
       console.error(error);
     }
@@ -196,10 +200,12 @@ export default function PracticeLogsScreen() {
           onPress: async () => {
             await deleteMeditationLog(id);
             await loadAllLogs();
-            Snackbar.show({
-              text: "Meditation log deleted",
-              duration: Snackbar.LENGTH_SHORT,
-            });
+            Alert.alert(
+              "Deleted",
+              "Meditation session log deleted.",
+              [{ text: "OK" }],
+              { cancelable: true }
+            );
           },
         },
       ]
@@ -219,10 +225,12 @@ export default function PracticeLogsScreen() {
           onPress: async () => {
             await clearReadingLogs();
             await loadAllLogs();
-            Snackbar.show({
-              text: "Reading history cleared",
-              duration: Snackbar.LENGTH_SHORT,
-            });
+            Alert.alert(
+              "Cleared",
+              "Reading history has been cleared.",
+              [{ text: "OK" }],
+              { cancelable: true }
+            );
           },
         },
       ]
@@ -242,10 +250,12 @@ export default function PracticeLogsScreen() {
           onPress: async () => {
             await deleteReadingLog(uid, timestamp);
             await loadAllLogs();
-            Snackbar.show({
-              text: "History entry removed",
-              duration: Snackbar.LENGTH_SHORT,
-            });
+            Alert.alert(
+              "Removed",
+              "History entry removed.",
+              [{ text: "OK" }],
+              { cancelable: true }
+            );
           },
         },
       ]

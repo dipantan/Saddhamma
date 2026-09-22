@@ -572,7 +572,21 @@ export async function buildFullTextIndex(
                 translationStr = stripHtml(await transFile.text());
               }
             } else {
-              const transFile = new ExpoFile(`${baseDir}translation/en/${selectedAuthor}/${transPath}`);
+              let transFile = new ExpoFile(`${baseDir}translation/en/${selectedAuthor}/${transPath}`);
+              if (!(await transFile.exists)) {
+                if (entry.translation_info && entry.translation_info[selectedAuthor]?.path) {
+                  transFile = new ExpoFile(`${baseDir}${entry.translation_info[selectedAuthor].path}`);
+                } else {
+                  const knownLangs = ["bn", "hi", "si", "my", "th"];
+                  for (const l of knownLangs) {
+                    const candidate = new ExpoFile(`${baseDir}translation/${l}/${selectedAuthor}/${transPath}`);
+                    if (await candidate.exists) {
+                      transFile = candidate;
+                      break;
+                    }
+                  }
+                }
+              }
               if (await transFile.exists) {
                 const parsed = JSON.parse(await transFile.text());
                 translationStr = Object.values(parsed).map(v => stripHtml(v as string)).join(" ");
@@ -992,9 +1006,23 @@ export async function getSuttaContent(
           }
         } else {
           // Standard Bilara JSON
-          const transFile = new ExpoFile(
+          let transFile = new ExpoFile(
             `${baseDir}translation/en/${selectedAuthor}/${transPath}`,
           );
+          if (!(await transFile.exists)) {
+            if (entry.translation_info && entry.translation_info[selectedAuthor]?.path) {
+              transFile = new ExpoFile(`${baseDir}${entry.translation_info[selectedAuthor].path}`);
+            } else {
+              const knownLangs = ["bn", "hi", "si", "my", "th"];
+              for (const l of knownLangs) {
+                const candidate = new ExpoFile(`${baseDir}translation/${l}/${selectedAuthor}/${transPath}`);
+                if (await candidate.exists) {
+                  transFile = candidate;
+                  break;
+                }
+              }
+            }
+          }
           if (await transFile.exists) {
             translationText = JSON.parse(await transFile.text());
           }

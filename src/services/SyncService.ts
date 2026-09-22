@@ -1,8 +1,7 @@
 import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
-import { Snackbar } from 'react-native-snackbar';
 import { unzip } from 'react-native-zip-archive';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 // Use absolute path alias to resolve module discovery issues
 import { buildFullTextIndex, isDataReady, populateIndex } from '@/services/DataService';
 
@@ -16,6 +15,9 @@ const VERSION_PATH = `${DATA_DIR_URI}version.json`;
 
 const SYNC_NOTIF_ID = "sutta-library-sync-status";
 
+let isSyncActive = false;
+let activeNotificationPromise: Promise<void> | null = null;
+
 async function setupSyncNotificationChannel() {
   if (Platform.OS === 'android') {
     try {
@@ -25,40 +27,57 @@ async function setupSyncNotificationChannel() {
         vibrationPattern: [0],
         enableVibrate: false,
       });
-    } catch (e) {}
+    } catch {}
   }
 }
 
 async function updateSyncNotification(title: string, body: string) {
-  try {
-    await setupSyncNotificationChannel();
-    await Notifications.scheduleNotificationAsync({
-      identifier: SYNC_NOTIF_ID,
-      content: {
-        title,
-        body,
-        sound: false,
-        priority: Notifications.AndroidNotificationPriority.LOW,
-      },
-      trigger: null,
-    });
-  } catch (e) {
-    console.log("Failed to update sync notification:", e);
-  }
+  if (!isSyncActive) return;
+  const notifTask = (async () => {
+    try {
+      await setupSyncNotificationChannel();
+      if (!isSyncActive) return;
+      await Notifications.scheduleNotificationAsync({
+        identifier: SYNC_NOTIF_ID,
+        content: {
+          title,
+          body,
+          sound: false,
+          priority: Notifications.AndroidNotificationPriority.LOW,
+        },
+        trigger: null,
+      });
+    } catch (e) {
+      console.log("Failed to update sync notification:", e);
+    }
+  })();
+  activeNotificationPromise = notifTask;
+  await notifTask;
 }
 
 async function completeSyncNotification() {
   try {
+    isSyncActive = false;
+    if (activeNotificationPromise) {
+      try {
+        await activeNotificationPromise;
+      } catch {}
+    }
     await Notifications.dismissNotificationAsync(SYNC_NOTIF_ID);
+    await new Promise((resolve) => setTimeout(resolve, 150));
     await Notifications.scheduleNotificationAsync({
+      identifier: SYNC_NOTIF_ID,
       content: {
         title: "Sutta Library Ready 🎉",
         body: "All suttas and global search indexing are now complete for offline use.",
         sound: true,
+        priority: Notifications.AndroidNotificationPriority.DEFAULT,
       },
       trigger: null,
     });
-  } catch (e) {}
+  } catch (e) {
+    console.log("Failed to complete sync notification:", e);
+  }
 }
 
 export interface VersionInfo {
@@ -111,21 +130,23 @@ export async function checkForUpdates(
 
     // Notify user that an update is available
     if (showNotification) {
-      Snackbar.show({
-        text: `New Sutta data available`,
-        duration: Snackbar.LENGTH_INDEFINITE,
-        action: {
-          text: 'UPDATE',
-          textColor: '#34C759',
-          onPress: () => {
-            Snackbar.dismiss();
-            console.log("User requested update via Snackbar");
-            if (onUpdateAction) {
-              onUpdateAction();
-            }
+      Alert.alert(
+        "New Sutta Data Available",
+        "A new version of the canonical texts and translations is available. Would you like to update now?",
+        [
+          { text: "Later", style: "cancel" },
+          {
+            text: "Update",
+            onPress: () => {
+              console.log("User requested update via Alert");
+              if (onUpdateAction) {
+                onUpdateAction();
+              }
+            },
           },
-        },
-      });
+        ],
+        { cancelable: true }
+      );
     }
 
     return latest;
@@ -135,17 +156,28 @@ export async function checkForUpdates(
   }
 }
 
+export type SyncStage =
+  | 'checking'
+  | 'downloading'
+  | 'extracting'
+  | 'optimizing'
+  | 'indexing_db'
+  | 'search_indexing'
+  | 'complete'
+  | 'failed';
+
 export interface SyncProgress {
   percent: number | null;
   message: string;
+  stage?: SyncStage;
 }
 
 export async function syncData(
   onProgress: (progress: SyncProgress) => void,
 ): Promise<boolean> {
   try {
-    Snackbar.dismiss();
-    onProgress({ percent: 0, message: "Checking for updates..." });
+    isSyncActive = true;
+    onProgress({ percent: 0, message: "Checking for updates...", stage: 'checking' });
     updateSyncNotification("Sutta Library Sync", "Checking for database updates...");
 
     const ready = await isDataReady();
@@ -154,7 +186,8 @@ export async function syncData(
     // If data is ready and no updates are available, skip.
     if (ready && !updateInfo) {
       console.log("Data is ready and no updates found. Skipping sync.");
-      onProgress({ percent: 1, message: "Data is up to date" });
+      isSyncActive = false;
+      onProgress({ percent: 1, message: "Data is up to date", stage: 'complete' });
       await Notifications.dismissNotificationAsync(SYNC_NOTIF_ID);
       return true;
     }
@@ -181,7 +214,7 @@ export async function syncData(
     }
 
     console.log("Starting data sync...");
-    onProgress({ percent: 0, message: "Connecting to server..." });
+    onProgress({ percent: 0, message: "Connecting to server...", stage: 'downloading' });
     updateSyncNotification("Sutta Library Sync", "Connecting to server...");
 
     const zipFile = new ExpoFile(ZIP_PATH);
@@ -193,6 +226,7 @@ export async function syncData(
         onProgress({
           percent: percent / 100,
           message: "Downloading Sutta data...",
+          stage: 'downloading',
         });
 
         // Throttle system notification updates to every 1.5s to avoid system overhead
@@ -214,7 +248,7 @@ export async function syncData(
 
     console.log("Extracting data...");
     const unzipStartTime = Date.now();
-    onProgress({ percent: null, message: "Extracting Sutta database..." });
+    onProgress({ percent: null, message: "Extracting Sutta database...", stage: 'extracting' });
     updateSyncNotification("Sutta Library Sync", "Extracting text files...");
 
     await unzip(result.uri, dataDir.uri);
@@ -222,7 +256,7 @@ export async function syncData(
     // Normalize structure if zipped with a 'data' folder
     const nestedData = new Directory(`${dataDir.uri}data/`);
     if (await nestedData.exists) {
-      onProgress({ percent: null, message: "Optimizing directory structure..." });
+      onProgress({ percent: null, message: "Optimizing directory structure...", stage: 'optimizing' });
       updateSyncNotification("Sutta Library Sync", "Optimizing file directory...");
       console.log("Normalizing nested data folder...");
       const contents = await nestedData.list();
@@ -246,7 +280,7 @@ export async function syncData(
     await versionFile.write(JSON.stringify(finalUpdateInfo));
 
     console.log("Populating index...");
-    onProgress({ percent: 0, message: "Indexing database..." });
+    onProgress({ percent: 0, message: "Indexing database...", stage: 'indexing_db' });
     updateSyncNotification("Sutta Library Sync", "Indexing master database...");
     
     await populateIndex((progressPercent) => {
@@ -254,6 +288,7 @@ export async function syncData(
       onProgress({
         percent: progressPercent,
         message: "Indexing database...",
+        stage: 'indexing_db',
       });
 
       const now = Date.now();
@@ -269,7 +304,7 @@ export async function syncData(
 
     // Run Full-Text Search indexing sequentially as part of initial setup pipeline
     console.log("Building full text search index...");
-    onProgress({ percent: 0, message: "Building search index..." });
+    onProgress({ percent: 0, message: "Building search index...", stage: 'search_indexing' });
     updateSyncNotification("Library Search Indexing", "Building search index...");
 
     await buildFullTextIndex((processed, total) => {
@@ -279,6 +314,7 @@ export async function syncData(
         onProgress({
           percent: ftsPercent,
           message: "Building search index...",
+          stage: 'search_indexing',
         });
 
         const now = Date.now();
@@ -290,24 +326,30 @@ export async function syncData(
     });
 
     console.log("Sync complete!");
-    onProgress({ percent: 1, message: "Sync complete!" });
+    onProgress({ percent: 1, message: "Sync complete!", stage: 'complete' });
     await completeSyncNotification();
 
-    Snackbar.show({
-      text: 'Sync complete!',
-      duration: Snackbar.LENGTH_LONG,
-      backgroundColor: '#34C759'
-    });
+    Alert.alert(
+      "Sync Complete",
+      "All suttas and global search indexing are now complete for offline use.",
+      [{ text: "OK" }],
+      { cancelable: true }
+    );
     return true;
   } catch (error) {
     console.error("Sync error:", error);
-    onProgress({ percent: null, message: "Sync failed!" });
-    try { await Notifications.dismissNotificationAsync(SYNC_NOTIF_ID); } catch (e) {}
-    Snackbar.show({
-      text: 'Sync failed!',
-      duration: Snackbar.LENGTH_LONG,
-      backgroundColor: '#FF3B30'
-    });
+    isSyncActive = false;
+    if (activeNotificationPromise) {
+      try { await activeNotificationPromise; } catch {}
+    }
+    onProgress({ percent: null, message: "Sync failed!", stage: 'failed' });
+    try { await Notifications.dismissNotificationAsync(SYNC_NOTIF_ID); } catch {}
+    Alert.alert(
+      "Sync Failed",
+      "An error occurred while synchronizing the Sutta library. Please check your internet connection.",
+      [{ text: "OK" }],
+      { cancelable: true }
+    );
     return false;
   }
 }

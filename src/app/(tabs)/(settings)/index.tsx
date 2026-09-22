@@ -215,15 +215,40 @@ export default function SettingsScreen() {
     setMode(next[mode]);
   };
 
-  const handleStartIndexing = async () => {
+  const handleStartIndexing = () => {
     if (isIndexing) return;
-    setStatus("Indexing…");
-    try {
-      await buildFullTextIndex();
-    } catch (err) {
-      console.error(err);
-      setStatus("Indexing Failed");
-    }
+    Alert.alert(
+      "Rebuild Search Index",
+      "Would you like to rebuild the search index in the background? You can continue using the app while indexing progresses.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start",
+          onPress: async () => {
+            setStatus("Indexing…");
+            try {
+              await buildFullTextIndex();
+              Alert.alert(
+                "Search Index Ready",
+                "Library search index has been successfully rebuilt.",
+                [{ text: "OK" }],
+                { cancelable: true }
+              );
+            } catch (err) {
+              console.error(err);
+              setStatus("Indexing Failed");
+              Alert.alert(
+                "Indexing Failed",
+                "An error occurred while building the search index.",
+                [{ text: "OK" }],
+                { cancelable: true }
+              );
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const renderSettingRow = ({

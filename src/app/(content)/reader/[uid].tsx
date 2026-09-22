@@ -21,6 +21,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Speech from "expo-speech";
 import {
+  Alert,
   BackHandler,
   FlatList,
   KeyboardAvoidingView,
@@ -35,7 +36,6 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Snackbar } from "react-native-snackbar";
 export { CustomErrorBoundary as ErrorBoundary } from "@/components";
 
 const SERIF_FONT = Platform.select({
@@ -80,6 +80,16 @@ const getLanguageName = (langCode: string): string => {
       return "Sanskrit";
     case "en":
       return "English";
+    case "bn":
+      return "Bengali (বাংলা)";
+    case "hi":
+      return "Hindi (हिन्दी)";
+    case "si":
+      return "Sinhala (සිංහල)";
+    case "my":
+      return "Burmese (မြန်မာ)";
+    case "th":
+      return "Thai (ไทย)";
     default:
       return code.charAt(0).toUpperCase() + code.slice(1);
   }
@@ -105,6 +115,10 @@ const formatAuthorName = (uid?: string): string => {
       return "Bhikkhu Ñāṇamoli";
     case "nyanaponika":
       return "Nyanaponika Thera";
+    case "shilalankar":
+      return "Ven. Shilalankar Mahathero";
+    case "sankrityayan":
+      return "Rahula Sankrityayan";
     default:
       return code.charAt(0).toUpperCase() + code.slice(1);
   }
@@ -536,18 +550,21 @@ export default function ReaderScreen() {
       });
 
       await Clipboard.setStringAsync(copyText.trim());
-      Snackbar.show({
-        text: "Sutta copied to clipboard",
-        duration: Snackbar.LENGTH_SHORT,
-      });
+      Alert.alert(
+        "Copied",
+        "Sutta copied to clipboard.",
+        [{ text: "OK" }],
+        { cancelable: true }
+      );
       setMenuExpanded(false);
     } catch (e) {
       console.error(e);
-      Snackbar.show({
-        text: "Failed to copy sutta text",
-        duration: Snackbar.LENGTH_SHORT,
-        backgroundColor: colors.error,
-      });
+      Alert.alert(
+        "Error",
+        "Failed to copy sutta text.",
+        [{ text: "OK" }],
+        { cancelable: true }
+      );
     }
   };
 
@@ -669,10 +686,12 @@ export default function ReaderScreen() {
                     stripHtml(rootTitle),
                   );
                   setIsBookmarked(newState);
-                  Snackbar.show({
-                    text: newState ? "Sutta bookmarked" : "Bookmark removed",
-                    duration: Snackbar.LENGTH_SHORT,
-                  });
+                  Alert.alert(
+                    "Bookmark",
+                    newState ? "Sutta added to bookmarks." : "Bookmark removed.",
+                    [{ text: "OK" }],
+                    { cancelable: true }
+                  );
                 }}
                 style={styles.iconBtn}
               >
@@ -966,10 +985,12 @@ export default function ReaderScreen() {
                           try {
                             const updated = await deleteSegmentAnnotation(activeSegmentId);
                             setUserAnnotations(updated);
-                            Snackbar.show({
-                              text: "Highlight removed",
-                              duration: Snackbar.LENGTH_SHORT,
-                            });
+                            Alert.alert(
+                              "Highlight Removed",
+                              "Segment highlight has been removed.",
+                              [{ text: "OK" }],
+                              { cancelable: true }
+                            );
                           } catch (err) {
                             console.error("Error deleting annotation:", err);
                           } finally {
@@ -1004,10 +1025,12 @@ export default function ReaderScreen() {
                               );
                               setUserAnnotations(updatedAnno);
                             }
-                            Snackbar.show({
-                              text: "Note deleted",
-                              duration: Snackbar.LENGTH_SHORT,
-                            });
+                            Alert.alert(
+                              "Note Deleted",
+                              "Segment note has been deleted.",
+                              [{ text: "OK" }],
+                              { cancelable: true }
+                            );
                           } catch (err) {
                             console.error("Error deleting note:", err);
                           } finally {
@@ -1081,10 +1104,12 @@ export default function ReaderScreen() {
                         );
                         setUserAnnotations(updatedAnno);
                       }
-                      Snackbar.show({
-                        text: "Note deleted",
-                        duration: Snackbar.LENGTH_SHORT,
-                      });
+                      Alert.alert(
+                        "Note Deleted",
+                        "Segment note has been deleted.",
+                        [{ text: "OK" }],
+                        { cancelable: true }
+                      );
                       setEditingNoteSegmentId(null);
                     }}
                   >
