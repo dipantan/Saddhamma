@@ -2,14 +2,18 @@ import { Directory, File as ExpoFile, Paths } from 'expo-file-system';
 import { unzip } from 'react-native-zip-archive';
 import * as Notifications from 'expo-notifications';
 import { Alert, Platform } from 'react-native';
-// Use absolute path alias to resolve module discovery issues
-import { buildFullTextIndex, isDataReady, populateIndex } from '@/services/DataService';
+import { closeDb, getDb, isDataReady } from '@/services/DataService';
 
 const RELEASE_BASE = "https://github.com/dipantan/suttacentral-api-server/releases/latest/download";
-const DATA_URL = `${RELEASE_BASE}/data.zip`;
+const SQLITE_ZIP_URL = `${RELEASE_BASE}/sutta_db.zip`;
 const VERSION_URL = `${RELEASE_BASE}/data.json`;
 
-const ZIP_PATH = `${Paths.cache.uri}data.zip`;
+const CACHE_ZIP_PATH = `${Paths.cache.uri}sutta_db.zip`;
+const STAGING_DIR_URI = `${Paths.cache.uri}sqlite_staging/`;
+const SQLITE_DIR_URI = `${Paths.document.uri}SQLite/`;
+const SQLITE_DB_PATH = `${SQLITE_DIR_URI}sutta_db.sqlite`;
+const SQLITE_WAL_PATH = `${SQLITE_DIR_URI}sutta_db.sqlite-wal`;
+const SQLITE_SHM_PATH = `${SQLITE_DIR_URI}sutta_db.sqlite-shm`;
 const DATA_DIR_URI = `${Paths.document.uri}sutta_data/`;
 const VERSION_PATH = `${DATA_DIR_URI}version.json`;
 
@@ -69,7 +73,7 @@ async function completeSyncNotification() {
       identifier: SYNC_NOTIF_ID,
       content: {
         title: "Sutta Library Ready 🎉",
-        body: "All suttas and global search indexing are now complete for offline use.",
+        body: "All suttas and pre-indexed search are now ready for offline use.",
         sound: true,
         priority: Notifications.AndroidNotificationPriority.DEFAULT,
       },
@@ -85,6 +89,8 @@ export interface VersionInfo {
   timestamp?: string;
   date?: string;
   updated_at?: string;
+  sqlite_bundle?: string;
+  sqlite_db?: string;
 }
 
 export async function getLocalVersion(): Promise<VersionInfo | null> {
@@ -132,7 +138,7 @@ export async function checkForUpdates(
     if (showNotification) {
       Alert.alert(
         "New Sutta Data Available",
-        "A new version of the canonical texts and translations is available. Would you like to update now?",
+        "A new pre-indexed version of the canonical texts and translations is available. Would you like to update now?",
         [
           { text: "Later", style: "cancel" },
           {
@@ -192,7 +198,7 @@ export async function syncData(
       return true;
     }
 
-    // If updateInfo is false but we are not ready, we need to get the latest version info anyway
+    // If updateInfo is false but we are not ready, retrieve version info
     let finalUpdateInfo = updateInfo;
     if (!finalUpdateInfo) {
       const controller = new AbortController();
@@ -213,27 +219,31 @@ export async function syncData(
       throw new Error("Could not retrieve version information for sync.");
     }
 
-    console.log("Starting data sync...");
+    console.log("Starting database bundle download...");
     onProgress({ percent: 0, message: "Connecting to server...", stage: 'downloading' });
     updateSyncNotification("Sutta Library Sync", "Connecting to server...");
 
-    const zipFile = new ExpoFile(ZIP_PATH);
+    const cacheZipFile = new ExpoFile(CACHE_ZIP_PATH);
+    if (await cacheZipFile.exists) {
+      try { await cacheZipFile.delete(); } catch {}
+    }
+
     let lastNotifTime = 0;
 
-    const downloadTask = ExpoFile.createDownloadTask(DATA_URL, zipFile, {
+    const downloadTask = ExpoFile.createDownloadTask(SQLITE_ZIP_URL, cacheZipFile, {
       onProgress: (progress) => {
         const percent = Math.round((progress.bytesWritten / progress.totalBytes) * 100);
         onProgress({
           percent: percent / 100,
-          message: "Downloading Sutta data...",
+          message: "Downloading pre-indexed database...",
           stage: 'downloading',
         });
 
-        // Throttle system notification updates to every 1.5s to avoid system overhead
+        // Throttle system notification updates to every 1.5s
         const now = Date.now();
         if (now - lastNotifTime > 1500 || percent === 100) {
           lastNotifTime = now;
-          updateSyncNotification("Sutta Library Sync", `Downloading data archive... ${percent}%`);
+          updateSyncNotification("Sutta Library Sync", `Downloading pre-indexed database... ${percent}%`);
         }
       }
     });
@@ -241,89 +251,70 @@ export async function syncData(
     const result = await downloadTask.downloadAsync();
     if (!result) throw new Error("Download failed");
 
+    onProgress({ percent: null, message: "Installing database...", stage: 'extracting' });
+    updateSyncNotification("Sutta Library Sync", "Installing database...");
+
+    // 1. Release active SQLite connection locks
+    await closeDb();
+
+    // 2. Prepare staging directory
+    const stagingDir = new Directory(STAGING_DIR_URI);
+    if (await stagingDir.exists) {
+      try { await stagingDir.delete(); } catch {}
+    }
+    await stagingDir.create({ intermediates: true });
+
+    // 3. Unzip the single sqlite database file from archive into staging
+    await unzip(result.uri, stagingDir.uri);
+
+    // 4. Locate extracted sqlite file
+    const stagedDbFile = new ExpoFile(`${stagingDir.uri}sutta_db.sqlite`);
+    if (!(await stagedDbFile.exists)) {
+      throw new Error("Extracted archive did not contain sutta_db.sqlite");
+    }
+
+    // 5. Ensure target SQLite directory exists
+    const sqliteDir = new Directory(SQLITE_DIR_URI);
+    if (!(await sqliteDir.exists)) {
+      await sqliteDir.create({ intermediates: true });
+    }
+
+    // 6. Delete old WAL / SHM files to prevent corruption with replaced DB
+    try {
+      const walFile = new ExpoFile(SQLITE_WAL_PATH);
+      if (await walFile.exists) await walFile.delete();
+      const shmFile = new ExpoFile(SQLITE_SHM_PATH);
+      if (await shmFile.exists) await shmFile.delete();
+    } catch (e) {
+      console.warn("Could not remove old WAL/SHM files:", e);
+    }
+
+    // 7. Replace the database file with the newly extracted pre-indexed database
+    const targetDbFile = new ExpoFile(SQLITE_DB_PATH);
+    if (await targetDbFile.exists) {
+      try { await targetDbFile.delete(); } catch {}
+    }
+    await stagedDbFile.move(targetDbFile);
+
+    // 8. Clean up staging directory and downloaded zip
+    try {
+      await stagingDir.delete();
+      if (await cacheZipFile.exists) await cacheZipFile.delete();
+    } catch (e) {}
+
+    // 9. Save version info
     const dataDir = new Directory(DATA_DIR_URI);
     if (!(await dataDir.exists)) {
       await dataDir.create({ intermediates: true });
     }
-
-    console.log("Extracting data...");
-    const unzipStartTime = Date.now();
-    onProgress({ percent: null, message: "Extracting Sutta database...", stage: 'extracting' });
-    updateSyncNotification("Sutta Library Sync", "Extracting text files...");
-
-    await unzip(result.uri, dataDir.uri);
-
-    // Normalize structure if zipped with a 'data' folder
-    const nestedData = new Directory(`${dataDir.uri}data/`);
-    if (await nestedData.exists) {
-      onProgress({ percent: null, message: "Optimizing directory structure...", stage: 'optimizing' });
-      updateSyncNotification("Sutta Library Sync", "Optimizing file directory...");
-      console.log("Normalizing nested data folder...");
-      const contents = await nestedData.list();
-      for (const item of contents) {
-        const dest = item instanceof Directory 
-          ? new Directory(`${dataDir.uri}${item.name}/`)
-          : new ExpoFile(`${dataDir.uri}${item.name}`);
-        
-        if (await dest.exists) {
-          await dest.delete();
-        }
-        await item.move(dest as any);
-      }
-      await nestedData.delete();
-    }
-
-    const unzipDuration = ((Date.now() - unzipStartTime) / 1000).toFixed(2);
-    console.log(`Extraction process completed in ${unzipDuration}s`);
-
     const versionFile = new ExpoFile(VERSION_PATH);
     await versionFile.write(JSON.stringify(finalUpdateInfo));
 
-    console.log("Populating index...");
-    onProgress({ percent: 0, message: "Indexing database...", stage: 'indexing_db' });
-    updateSyncNotification("Sutta Library Sync", "Indexing master database...");
-    
-    await populateIndex((progressPercent) => {
-      const pct = Math.round(progressPercent * 100);
-      onProgress({
-        percent: progressPercent,
-        message: "Indexing database...",
-        stage: 'indexing_db',
-      });
-
-      const now = Date.now();
-      if (now - lastNotifTime > 1500 || pct === 100) {
-        lastNotifTime = now;
-        updateSyncNotification("Sutta Library Sync", `Indexing master database... ${pct}%`);
-      }
-    });
-
-    if (await zipFile.exists) {
-      await zipFile.delete();
-    }
-
-    // Run Full-Text Search indexing sequentially as part of initial setup pipeline
-    console.log("Building full text search index...");
-    onProgress({ percent: 0, message: "Building search index...", stage: 'search_indexing' });
-    updateSyncNotification("Library Search Indexing", "Building search index...");
-
-    await buildFullTextIndex((processed, total) => {
-      if (total > 0) {
-        const ftsPercent = processed / total;
-        const pct = Math.round(ftsPercent * 100);
-        onProgress({
-          percent: ftsPercent,
-          message: "Building search index...",
-          stage: 'search_indexing',
-        });
-
-        const now = Date.now();
-        if (now - lastNotifTime > 1500 || processed === total) {
-          lastNotifTime = now;
-          updateSyncNotification("Library Search Indexing", `Indexing search library... ${pct}% (${processed}/${total})`);
-        }
-      }
-    });
+    // 10. Reopen database connection to verify ready state
+    console.log("Verifying new database instance...");
+    const db = await getDb();
+    const countCheck = await db.getFirstAsync<{ count: number }>("SELECT count(*) as count FROM sutta_index");
+    console.log(`Database ready with ${countCheck?.count || 0} suttas.`);
 
     console.log("Sync complete!");
     onProgress({ percent: 1, message: "Sync complete!", stage: 'complete' });
@@ -331,7 +322,7 @@ export async function syncData(
 
     Alert.alert(
       "Sync Complete",
-      "All suttas and global search indexing are now complete for offline use.",
+      "Sutta library and pre-indexed search have been successfully installed and are ready for offline use.",
       [{ text: "OK" }],
       { cancelable: true }
     );

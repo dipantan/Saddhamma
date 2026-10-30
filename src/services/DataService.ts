@@ -156,39 +156,35 @@ export async function loadSettings(): Promise<any | null> {
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
-export async function isDataReady(): Promise<boolean> {
-  const rootIndex = new ExpoFile(INDEX_PATH);
-  const fileExists = await rootIndex.exists;
-  if (!fileExists) {
-    const generatedIndex = new ExpoFile(`${DATA_DIR}generated/sutta_index.json`);
-    if (!(await generatedIndex.exists)) return false;
+export async function closeDb(): Promise<void> {
+  const globalAny = globalThis as any;
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      await db.closeAsync();
+    } catch (e) {
+      console.warn("[DB] Error closing dbPromise:", e);
+    }
+    dbPromise = null;
   }
+  if (globalAny.__dbInstance) {
+    try {
+      await globalAny.__dbInstance.closeAsync();
+    } catch (e) {
+      console.warn("[DB] Error closing global __dbInstance:", e);
+    }
+    globalAny.__dbInstance = null;
+  }
+  console.log("[DB] Closed database connection.");
+}
 
-  // Even if file exists, verify database is populated
+export async function isDataReady(): Promise<boolean> {
   try {
     const database = await getDb();
     const result = await database.getFirstAsync<{ count: number }>(
       "SELECT count(*) as count FROM sutta_index"
     );
-    const indexReady = (result?.count || 0) > 0;
-
-    if (indexReady) {
-      // Check if metadata is populated, if not build it in the background
-      database.getFirstAsync<{ count: number }>(
-        "SELECT count(*) as count FROM sutta_metadata"
-      ).then((metaResult) => {
-        if ((metaResult?.count || 0) === 0) {
-          console.log("Metadata table is empty. Rebuilding in background...");
-          populateMetadata(database).catch((err) => {
-            console.error("Failed to build metadata in background:", err);
-          });
-        }
-      }).catch((err) => {
-        console.error("Failed to query sutta_metadata count:", err);
-      });
-    }
-
-    return indexReady;
+    return (result?.count || 0) > 0;
   } catch (error) {
     console.error("isDataReady DB check failed:", error);
     return false;
@@ -276,6 +272,20 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
           root_name TEXT,
           acronym TEXT,
           blurb TEXT
+        CREATE TABLE IF NOT EXISTS menus (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS sutta_content (
+          uid TEXT,
+          author_uid TEXT,
+          root_text TEXT,
+          translation_text TEXT,
+          comment_text TEXT,
+          html_text TEXT,
+          root_lang TEXT,
+          PRIMARY KEY (uid, author_uid)
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS sutta_fts USING fts5(
@@ -760,6 +770,40 @@ export async function getSuttaContent(
 ): Promise<any | null> {
   const lowerUid = uid.toLowerCase();
   const database = await getDb();
+
+  // 1. First check pre-indexed SQLite sutta_content table
+  try {
+    let contentRow = await database.getFirstAsync<any>(
+      "SELECT * FROM sutta_content WHERE uid = ? AND (author_uid = ? OR author_uid = 'sujato') LIMIT 1",
+      [uid, author]
+    );
+    if (!contentRow) {
+      contentRow = await database.getFirstAsync<any>(
+        "SELECT * FROM sutta_content WHERE uid = ? LIMIT 1",
+        [uid]
+      );
+    }
+    if (contentRow) {
+      let parsedRoot: Record<string, string> = {};
+      let parsedTrans: Record<string, string> = {};
+      let parsedComment: Record<string, string> = {};
+      try { if (contentRow.root_text) parsedRoot = JSON.parse(contentRow.root_text); } catch (e) {}
+      try { if (contentRow.translation_text) parsedTrans = JSON.parse(contentRow.translation_text); } catch (e) {}
+      try { if (contentRow.comment_text) parsedComment = JSON.parse(contentRow.comment_text); } catch (e) {}
+
+      return {
+        uid: contentRow.uid,
+        root_text: parsedRoot,
+        translation_text: parsedTrans,
+        comment_text: parsedComment,
+        html_text: contentRow.html_text || {},
+        author_uid: contentRow.author_uid || author,
+        root_lang: contentRow.root_lang || "pli",
+      };
+    }
+  } catch (dbErr) {
+    // Table may not exist on older schema; fall back seamlessly
+  }
 
   const result = await database.getFirstAsync<any>(
     "SELECT data FROM sutta_index WHERE uid = ?",
@@ -1514,6 +1558,19 @@ export async function getRandomSuttas(
 }
 
 export async function getMenu(menuId: string): Promise<any | null> {
+  try {
+    const database = await getDb();
+    const row = await database.getFirstAsync<{ data: string }>(
+      "SELECT data FROM menus WHERE id = ?",
+      [menuId]
+    );
+    if (row && row.data) {
+      return JSON.parse(row.data);
+    }
+  } catch (e) {
+    // Proceed to file fallback
+  }
+
   const menuPath = `${DATA_DIR}menus/${menuId}.json`;
   try {
     const menuFile = new ExpoFile(menuPath);
@@ -1528,6 +1585,29 @@ export async function getMenu(menuId: string): Promise<any | null> {
 }
 
 export async function getRootCategories(): Promise<any[]> {
+  try {
+    const database = await getDb();
+    const row = await database.getFirstAsync<{ data: string }>(
+      "SELECT data FROM menus WHERE id = 'root'"
+    );
+    if (row && row.data) {
+      const data = JSON.parse(row.data);
+      if (Array.isArray(data)) {
+        const orderMap: Record<string, number> = {
+          sutta: 1,
+          vinaya: 2,
+          abhidhamma: 3,
+        };
+        return data
+          .map((cat: any) => ({
+            ...cat,
+            order: orderMap[cat.id?.toLowerCase()] || 99,
+          }))
+          .sort((a, b) => a.order - b.order);
+      }
+    }
+  } catch (e) {}
+
   try {
     const dataDir = new Directory(DATA_DIR);
     if (!(await dataDir.exists)) {
